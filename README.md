@@ -11,9 +11,6 @@
 ~~~
 2026_Roboracer_JBD/
 ├── config/                 # 컨트롤러/파라미터 튜닝 yaml
-├── docs/                   # 문서
-├── maps/                   # SLAM으로 딴 맵 (.pgm, .yaml)
-├── paths/                  # 전역경로 최적화 결과 (.csv)
 ├── README.md
 └── src/
     ├── 1_slam_mapping/     # SLAM → 맵 저장
