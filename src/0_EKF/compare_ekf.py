@@ -3,6 +3,7 @@
   python3 compare_ekf.py 0808_test_2
 """
 import math
+import os
 import sys
 
 import numpy as np
@@ -10,7 +11,10 @@ import rosbag2_py
 from rclpy.serialization import deserialize_message
 from rosidl_runtime_py.utilities import get_message
 
-ROOT = '/home/minjae/2026_Roboracer_JBD/test_bags'
+ROOT = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.dirname(
+        os.path.realpath(__file__)))),
+    'src', '1_slam_mapping', 'maps', 'test_bags')
 
 
 def read(uri, topic):

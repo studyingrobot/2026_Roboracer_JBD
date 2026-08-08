@@ -9,8 +9,8 @@ import launch_ros.actions
 # /opt/ros/humble/share/slam_toolbox/config 로 하드코딩되어 있어 수정이 불가능하다.
 # 여기서는 저장소 안의 yaml을 기본값으로 쓰고, 필요하면 인자로 덮어쓴다.
 DEFAULT_PARAMS = os.path.join(
-    os.path.dirname(os.path.dirname(os.path.realpath(__file__))),
-    'config', 'mapper_params_offline.yaml'
+    os.path.dirname(os.path.realpath(__file__)),
+    'mapper_params_offline.yaml'
 )
 
 

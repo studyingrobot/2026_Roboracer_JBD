@@ -4,9 +4,10 @@
 BAG_NAME=${1:?사용법: ./run_ekf_bag.sh <bag이름> [출력bag]}
 HERE=$(cd "$(dirname "$0")" && pwd)
 ROOT=$(cd "$HERE/../.." && pwd)
-BAG=$ROOT/test_bags/$BAG_NAME
-OUT=${2:-$ROOT/test_bags/${BAG_NAME}_ekf}
-YAML=$ROOT/config/local_ekf.yaml
+BAGS=$ROOT/src/1_slam_mapping/maps/test_bags
+BAG=$BAGS/$BAG_NAME
+OUT=${2:-$BAGS/${BAG_NAME}_ekf}
+YAML=$HERE/local_ekf.yaml
 LOG=${TMPDIR:-/tmp}/ekf_bag_$$
 
 source /opt/ros/humble/setup.bash
