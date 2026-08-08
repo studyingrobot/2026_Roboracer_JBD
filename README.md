@@ -18,7 +18,9 @@
     │   ├── run_ekf_bag.sh        #   bag 으로 EKF 단독 검증
     │   └── compare_ekf.py        #   EKF 출력 vs 원본 odom 궤적 비교
     ├── 1_slam_mapping/           # SLAM → 맵 저장
-    │   ├── slam_toolbox/         #   slam_toolbox launch + 파라미터
+    │   ├── slam_toolbox/         #   slam_toolbox 설정 + 실행
+    │   │   ├── mapper_params_offline.yaml  #  설정값 (해상도, 루프클로저, 프레임 이름)
+    │   │   └── offline_launch.py           #  위 설정으로 slam_toolbox 단독 실행
     │   ├── maps/                 #   맵(.pgm/.yaml), test_bags/
     │   └── slam_analysis_to_map/ #   맵 품질 분석 스크립트
     ├── 2_global_planner/         # 전역 경로 최적화 → CSV
