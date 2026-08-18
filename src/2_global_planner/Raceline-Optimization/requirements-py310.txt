@@ -1,0 +1,9 @@
+numpy
+matplotlib
+git+https://github.com/CL2-UWaterloo/trajectory_planning_helpers.git
+scipy
+scikit-image
+scikit-learn
+casadi
+PyYAML
+pandas
