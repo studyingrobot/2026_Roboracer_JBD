@@ -1,0 +1,5 @@
+localization_node:
+  ros__parameters:
+    input_odom_topic: "/ego_racecar/odom"
+    output_odom_topic: "/localization/odom"
+    output_pose_topic: "/localization/pose"
