@@ -1,4 +1,4 @@
-pure_pursuit_node:
+minjae_pp_node:
   ros__parameters:
     drive_mode: "sim"
     enabled: false
@@ -8,10 +8,15 @@ pure_pursuit_node:
     odom_topic: "/ego_racecar/odom"
     path_topic: "/planning/path"
 
-    sim_drive_topic: "/drive"
-
-    real_speed_topic: "/commands/motor/speed"
-    real_servo_topic: "/commands/servo/position"
+    # minjae changes
+    # sim=/drive, real=/auto. launch 가 덮어쓴다.
+    drive_topic: "/drive"
+    speed_limit_topic: "/planning/speed_limit"
+    emergency_stop_topic: "/safety/emergency_stop"
+    speed_limit_timeout: 0.50
+    use_dynamic_speed_limit: true
+    min_command_speed: 0.0
+    # minjae changes
 
 
     # minjae changes  
@@ -22,9 +27,9 @@ pure_pursuit_node:
     search_back_points: 8
     search_forward_points: 30
 
-    target_speed: 10.0
+    target_speed: 4.0
     min_speed: 0.7
-    max_speed: 10.0
+    max_speed: 4.0
     corner_slowdown_gain: 0.3 # 코너 감속 강화 
 
     # 속도 비례 lookahead: L = clamp(time * v, min, max)
@@ -40,13 +45,9 @@ pure_pursuit_node:
     # minjae changes
 
 
-    speed_to_erpm_gain: 3000.0
-    speed_to_erpm_offset: 0.0
-
-    servo_center: 0.5
-    servo_gain: 1.0
-    servo_min: 0.0
-    servo_max: 1.0
+    # minjae changes
+    # ERPM/서보 변환은 차량의 ackermann_to_vesc 가 담당하므로 제거.
+    # minjae changes
 
     control_rate: 50.0
     odom_timeout: 0.50

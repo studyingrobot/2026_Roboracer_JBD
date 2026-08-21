@@ -35,7 +35,7 @@ setup(
     tests_require=['pytest'],
     entry_points={
         'console_scripts': [
-            'pure_pursuit_node = control.pure_pursuit_node:main',
+            'minjae_pp_node = control.minjae_pp_node:main',
             'linear_mpc_node = control.linear_mpc_node:main',
             'unicorn_l1_node = control.unicorn_l1_node:main',
         ],

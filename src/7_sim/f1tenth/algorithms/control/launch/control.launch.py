@@ -43,17 +43,47 @@ def _launch_setup(context):
     if controller == 'none':
         return [LogInfo(msg='Controller disabled (controller:=none)')]
 
-    if controller == 'pure_pursuit':
-        return [Node(
-            package='control',
-            executable='pure_pursuit_node',
-            name='pure_pursuit_node',
-            output='screen',
-            parameters=[
-                LaunchConfiguration('control_params_file').perform(context),
-                {'drive_mode': LaunchConfiguration('drive_mode').perform(context)},
-            ],
-        )]
+    # minjae changes
+    # 이전에는 speed:= 를 무시하고 yaml 의 target_speed 로만 달렸다.
+    # 실차에서 speed:=1.0 을 줘도 4.0 으로 나가는 문제라 반드시 덮어쓴다.
+    # min_speed / max_lateral_acceleration 등 튜닝값은 yaml 을 그대로 쓴다.
+    if controller == 'minjae_pp':
+        requested_speed = float(LaunchConfiguration('speed').perform(context))
+        if not math.isfinite(requested_speed) or requested_speed <= 0.0:
+            raise RuntimeError(
+                'minjae_pp requires speed:=<m/s> greater than 0; '
+                f'got {requested_speed!r}.')
+        return [
+            LogInfo(msg=f'Controller=minjae_pp speed={requested_speed:.2f}m/s'),
+            Node(
+                package='control',
+                executable='minjae_pp_node',
+                name='minjae_pp_node',
+                output='screen',
+                parameters=[
+                    LaunchConfiguration('control_params_file').perform(context),
+                    {
+                        'drive_mode': LaunchConfiguration(
+                            'drive_mode').perform(context),
+                        'global_frame_id': LaunchConfiguration(
+                            'global_frame_id').perform(context),
+                        'base_frame_id': LaunchConfiguration(
+                            'base_frame_id').perform(context),
+                        'odom_topic': LaunchConfiguration(
+                            'odom_topic').perform(context),
+                        'drive_topic': LaunchConfiguration(
+                            'drive_topic').perform(context),
+                        'emergency_stop_topic': LaunchConfiguration(
+                            'emergency_stop_topic').perform(context),
+                        'target_speed': requested_speed,
+                        'max_speed': requested_speed,
+                        'min_command_speed': float(LaunchConfiguration(
+                            'min_command_speed').perform(context)),
+                    },
+                ],
+            ),
+        ]
+    # minjae changes
 
     if controller in ('unicorn_l1', 'unicorn_l1_dynamic'):
         use_dynamic_speed_limit = controller == 'unicorn_l1_dynamic'
@@ -117,7 +147,7 @@ def _launch_setup(context):
 
     if controller != 'mpc':
         raise RuntimeError(
-            f'Unknown controller {controller!r}; use none, pure_pursuit, '
+            f'Unknown controller {controller!r}; use none, minjae_pp, '
             'unicorn_l1, unicorn_l1_dynamic, or mpc.')
 
     config_path = LaunchConfiguration('mpc_params_file').perform(context)
@@ -182,14 +212,20 @@ def generate_launch_description():
     return LaunchDescription([
         DeclareLaunchArgument(
             'control_params_file',
-            default_value=os.path.join(package_share, 'config', 'params.yaml'),
+            default_value=os.path.join(package_share, 'config', 'minjae_pp_params.yaml'),
         ),
         DeclareLaunchArgument('drive_mode', default_value='sim'),
+        # minjae changes
+        DeclareLaunchArgument(
+            'speed',
+            default_value='1.0',
+            description='minjae_pp target/max speed in m/s'),
+        # minjae changes
         DeclareLaunchArgument(
             'controller',
-            default_value='pure_pursuit',
+            default_value='minjae_pp',
             description=(
-                'none, pure_pursuit, unicorn_l1, unicorn_l1_dynamic, or mpc'),
+                'none, minjae_pp, unicorn_l1, unicorn_l1_dynamic, or mpc'),
         ),
         DeclareLaunchArgument(
             'mpc_profile',

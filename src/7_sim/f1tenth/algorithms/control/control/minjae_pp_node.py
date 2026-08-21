@@ -13,14 +13,18 @@ from nav_msgs.msg import Odometry, Path
 # minjae changes
 from rcl_interfaces.msg import SetParametersResult
 # minjae changes
-from std_msgs.msg import Float64
+# minjae changes
+# /auto 는 AckermannDriveStamped 로 발행하므로 Float64(ERPM/서보)는 쓰지 않는다.
+# Bool = 로컬 플래너 AEB, Float32 = 플래너 곡률 속도상한.
+from std_msgs.msg import Bool, Float32
+# minjae changes
 from std_srvs.srv import SetBool
 from tf2_ros import Buffer, TransformException, TransformListener
 
 
-class PurePursuitNode(Node):
+class MinjaePPNode(Node):
     def __init__(self):
-        super().__init__('pure_pursuit_node')
+        super().__init__('minjae_pp_node')
 
         self.declare_parameter('drive_mode', 'sim')
         self.declare_parameter('enabled', False)
@@ -29,9 +33,17 @@ class PurePursuitNode(Node):
         self.declare_parameter('base_frame_id', 'ego_racecar/base_link')
         self.declare_parameter('odom_topic', '/ego_racecar/odom')
         self.declare_parameter('path_topic', '/planning/path')
-        self.declare_parameter('sim_drive_topic', '/drive')
-        self.declare_parameter('real_speed_topic', '/commands/motor/speed')
-        self.declare_parameter('real_servo_topic', '/commands/servo/position')
+        # minjae changes
+        # 실차에서 VESC 로 직접 쏘지 않고 Ackermann mux(/auto)를 거친다.
+        # sim 은 /drive, real 은 /auto 를 launch 가 넣어준다.
+        self.declare_parameter('drive_topic', '/drive')
+        self.declare_parameter('speed_limit_topic', '/planning/speed_limit')
+        self.declare_parameter(
+            'emergency_stop_topic', '/safety/emergency_stop')
+        self.declare_parameter('speed_limit_timeout', 0.50)
+        self.declare_parameter('use_dynamic_speed_limit', True)
+        self.declare_parameter('min_command_speed', 0.0)
+        # minjae changes
 
         self.declare_parameter('wheelbase', 0.33)
 
@@ -65,12 +77,10 @@ class PurePursuitNode(Node):
         # minjae changes
 
         
-        self.declare_parameter('speed_to_erpm_gain', 3000.0)
-        self.declare_parameter('speed_to_erpm_offset', 0.0)
-        self.declare_parameter('servo_center', 0.5)
-        self.declare_parameter('servo_gain', 1.0)
-        self.declare_parameter('servo_min', 0.0)
-        self.declare_parameter('servo_max', 1.0)
+        # minjae changes
+        # ERPM/서보 변환은 차량의 ackermann_to_vesc 가 담당하므로 제거.
+        # (speed_to_erpm_gain, servo_center 등 6개 파라미터 삭제)
+        # minjae changes
 
         self.declare_parameter('control_rate', 30.0)
         self.declare_parameter('odom_timeout', 0.50)
@@ -89,9 +99,18 @@ class PurePursuitNode(Node):
         self.base_frame_id = self.get_parameter('base_frame_id').value
         self.odom_topic = self.get_parameter('odom_topic').value
         self.path_topic = self.get_parameter('path_topic').value
-        self.sim_drive_topic = self.get_parameter('sim_drive_topic').value
-        self.real_speed_topic = self.get_parameter('real_speed_topic').value
-        self.real_servo_topic = self.get_parameter('real_servo_topic').value
+        # minjae changes
+        self.drive_topic = self.get_parameter('drive_topic').value
+        self.speed_limit_topic = self.get_parameter('speed_limit_topic').value
+        self.emergency_stop_topic = self.get_parameter(
+            'emergency_stop_topic').value
+        self.speed_limit_timeout = float(
+            self.get_parameter('speed_limit_timeout').value)
+        self.use_dynamic_speed_limit = bool(
+            self.get_parameter('use_dynamic_speed_limit').value)
+        self.min_command_speed = float(
+            self.get_parameter('min_command_speed').value)
+        # minjae changes
 
         self.wheelbase = float(self.get_parameter('wheelbase').value)
 
@@ -137,14 +156,9 @@ class PurePursuitNode(Node):
         # minjae changes
 
 
-        self.speed_to_erpm_gain = float(
-            self.get_parameter('speed_to_erpm_gain').value)
-        self.speed_to_erpm_offset = float(
-            self.get_parameter('speed_to_erpm_offset').value)
-        self.servo_center = float(self.get_parameter('servo_center').value)
-        self.servo_gain = float(self.get_parameter('servo_gain').value)
-        self.servo_min = float(self.get_parameter('servo_min').value)
-        self.servo_max = float(self.get_parameter('servo_max').value)
+        # minjae changes
+        # ERPM/서보 변환 계수 제거 (ackermann_to_vesc 가 담당)
+        # minjae changes
 
         self.odom_timeout = float(self.get_parameter('odom_timeout').value)
         self.path_timeout = float(self.get_parameter('path_timeout').value)
@@ -158,6 +172,12 @@ class PurePursuitNode(Node):
 
         # minjae changes
         self.path_curvature = None
+        # minjae changes
+
+        # minjae changes
+        self.emergency_stop_active = False
+        self.speed_limit = None
+        self.last_speed_limit_time = None
         # minjae changes
 
         self.last_odom_time = None
@@ -174,12 +194,17 @@ class PurePursuitNode(Node):
         self.create_subscription(
             Path, self.path_topic, self.path_callback, 10)
 
-        self.sim_drive_pub = self.create_publisher(
-            AckermannDriveStamped, self.sim_drive_topic, 10)
-        self.real_speed_pub = self.create_publisher(
-            Float64, self.real_speed_topic, 10)
-        self.real_servo_pub = self.create_publisher(
-            Float64, self.real_servo_topic, 10)
+        # minjae changes
+        self.create_subscription(
+            Float32, self.speed_limit_topic, self.speed_limit_callback, 10)
+        self.create_subscription(
+            Bool, self.emergency_stop_topic,
+            self.emergency_stop_callback, 10)
+
+        # sim/real 모두 AckermannDriveStamped 하나만 발행한다.
+        self.drive_pub = self.create_publisher(
+            AckermannDriveStamped, self.drive_topic, 10)
+        # minjae changes
 
         self.enable_service = self.create_service(
             SetBool, '/control/enable', self.enable_callback)
@@ -196,8 +221,7 @@ class PurePursuitNode(Node):
                 self.global_frame_id,
                 self.base_frame_id,
                 self.path_topic,
-                self.sim_drive_topic if self.drive_mode == 'sim'
-                else self.real_speed_topic,
+                self.drive_topic,  # minjae changes
             ))
         self.get_logger().info(
             'Start/stop: ros2 service call /control/enable '
@@ -219,6 +243,16 @@ class PurePursuitNode(Node):
         # minjae changes
 
         self.last_path_time = self.get_clock().now()
+
+    # minjae changes
+    def speed_limit_callback(self, msg):
+        """로컬 플래너가 회피 중 발행하는 곡률 기반 속도 상한."""
+        self.speed_limit = max(0.0, float(msg.data))
+        self.last_speed_limit_time = self.get_clock().now()
+
+    def emergency_stop_callback(self, msg):
+        self.emergency_stop_active = bool(msg.data)
+    # minjae changes
 
     # minjae changes
     def enable_callback(self, request, response):
@@ -537,6 +571,26 @@ class PurePursuitNode(Node):
 
         speed = self.clamp(speed, self.min_speed, self.max_speed)
 
+        # minjae changes
+        # 로컬 플래너가 회피 중 발행하는 곡률 기반 상한을 반영한다.
+        # 발행자가 없거나 오래됐으면 상한을 걸지 않는다(안전한 쪽으로 fail).
+        upper_limit = self.max_speed
+        if (self.use_dynamic_speed_limit
+                and self.speed_limit is not None
+                and self.age_seconds(self.last_speed_limit_time)
+                <= self.speed_limit_timeout):
+            upper_limit = min(upper_limit, self.speed_limit)
+        if upper_limit <= 0.0:
+            return 0.0
+        # min_speed 가 상한보다 클 수 있으므로(예: speed:=0.5, min_speed=0.7)
+        # 하한을 먼저 상한으로 눌러 모순을 막는다.
+        speed = self.clamp(
+            speed, min(self.min_speed, upper_limit), upper_limit)
+        # 액추에이터 데드밴드: 0보다 크면 실제로 굴러가는 최소 명령까지 올린다.
+        if 0.0 < speed < self.min_command_speed:
+            speed = min(self.min_command_speed, upper_limit)
+        # minjae changes
+
         # Tuning aid: delete this log block once the gains are settled.
         self.get_logger().info(
             'kappa=%.3f curve_v=%.2f cmd_v=%.2f' % (
@@ -548,44 +602,20 @@ class PurePursuitNode(Node):
     # minjae changes
 
 
+    # minjae changes
+    # sim(/drive) 과 real(/auto) 모두 동일하게 Ackermann 으로 발행한다.
+    # 실차 ERPM/서보 변환은 ackermann_to_vesc 가 담당하므로 여기서 하지 않는다.
     def publish_drive(self, speed, steering):
-        if self.drive_mode == 'sim':
-            msg = AckermannDriveStamped()
-            msg.header.stamp = self.get_clock().now().to_msg()
-            msg.header.frame_id = self.base_frame_id
-            msg.drive.speed = float(speed)
-            msg.drive.steering_angle = float(steering)
-            self.sim_drive_pub.publish(msg)
-            return
-
-        speed_msg = Float64()
-        servo_msg = Float64()
-        speed_msg.data = (
-            self.speed_to_erpm_gain * speed + self.speed_to_erpm_offset)
-        servo_msg.data = self.clamp(
-            self.servo_center + self.servo_gain * steering,
-            self.servo_min,
-            self.servo_max,
-        )
-        self.real_speed_pub.publish(speed_msg)
-        self.real_servo_pub.publish(servo_msg)
+        msg = AckermannDriveStamped()
+        msg.header.stamp = self.get_clock().now().to_msg()
+        msg.header.frame_id = self.base_frame_id
+        msg.drive.speed = float(speed)
+        msg.drive.steering_angle = float(steering)
+        self.drive_pub.publish(msg)
 
     def publish_stop(self):
-        if self.drive_mode == 'sim':
-            msg = AckermannDriveStamped()
-            msg.header.stamp = self.get_clock().now().to_msg()
-            msg.header.frame_id = self.base_frame_id
-            msg.drive.speed = 0.0
-            msg.drive.steering_angle = 0.0
-            self.sim_drive_pub.publish(msg)
-            return
-
-        speed_msg = Float64()
-        servo_msg = Float64()
-        speed_msg.data = 0.0
-        servo_msg.data = self.servo_center
-        self.real_speed_pub.publish(speed_msg)
-        self.real_servo_pub.publish(servo_msg)
+        self.publish_drive(0.0, 0.0)
+    # minjae changes
 
     def warn_throttled(self, message):
         now = self.get_clock().now()
@@ -600,6 +630,14 @@ class PurePursuitNode(Node):
         if not self.enabled:
             self.publish_stop()
             return
+
+        # minjae changes
+        # AEB 는 TF/odom 상태와 무관하게 최우선으로 처리한다.
+        if self.emergency_stop_active:
+            self.publish_stop()
+            self.warn_throttled('Safety stop: local planner emergency stop')
+            return
+        # minjae changes
 
         problem = self.readiness_problem()
         if problem is not None:
@@ -635,7 +673,7 @@ class PurePursuitNode(Node):
 
 def main(args=None):
     rclpy.init(args=args)
-    node = PurePursuitNode()
+    node = MinjaePPNode()
     try:
         rclpy.spin(node)
     except KeyboardInterrupt:

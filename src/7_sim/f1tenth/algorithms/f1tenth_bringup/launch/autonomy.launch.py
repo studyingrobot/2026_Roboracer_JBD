@@ -56,6 +56,7 @@ def _launch_setup(context, catalog_path):
             _include('control', 'control.launch.py', {
                 'controller': controller,
                 'mpc_profile': speed_profile,
+                'speed': requested_speed,  # minjae changes
                 'drive_mode': 'real',
                 'enabled': 'false',
                 'global_frame_id': 'map',
@@ -126,6 +127,7 @@ def _launch_setup(context, catalog_path):
         _include('control', 'control.launch.py', {
             'controller': controller,
             'mpc_profile': mpc_profile,
+            'speed': LaunchConfiguration('speed').perform(context),  # minjae changes
             'drive_mode': 'sim',
             'max_lateral_acceleration': LaunchConfiguration(
                 'max_lateral_acceleration').perform(context),
@@ -159,12 +161,13 @@ def generate_launch_description():
             'controller',
             default_value='unicorn_l1',
             description=(
-                'none, pure_pursuit, unicorn_l1, unicorn_l1_dynamic, or mpc'),
+                'none, minjae_pp, unicorn_l1, unicorn_l1_dynamic, or mpc'),
         ),
         DeclareLaunchArgument(
             'speed',
             default_value='1.0',
-            description='Real-vehicle maximum speed in m/s',
+            # minjae changes: sim/real 공통 속도 인자
+            description='Controller target speed in m/s (sim and real)',
         ),
         DeclareLaunchArgument(
             'mpc_profile',
