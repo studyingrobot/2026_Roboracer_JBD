@@ -1,0 +1,23 @@
+build/
+install/
+log/
+**/__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# Runtime data and local backups
+bags/
+*.db3
+*.mcap
+*.bag
+*.backup
+*.precalib
+*.run*_before_*
+results/
+.ros/
+
+# Editor and OS files
+.vscode/
+.idea/
+*~
+.DS_Store

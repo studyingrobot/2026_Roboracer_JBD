@@ -1,0 +1,54 @@
+minjae_pp_node:
+  ros__parameters:
+    drive_mode: "sim"
+    enabled: false
+
+    global_frame_id: "map"
+    base_frame_id: "ego_racecar/base_link"
+    odom_topic: "/ego_racecar/odom"
+    path_topic: "/planning/path"
+
+    # minjae changes
+    # sim=/drive, real=/auto. launch 가 덮어쓴다.
+    drive_topic: "/drive"
+    speed_limit_topic: "/planning/speed_limit"
+    emergency_stop_topic: "/safety/emergency_stop"
+    speed_limit_timeout: 0.50
+    use_dynamic_speed_limit: true
+    min_command_speed: 0.0
+    # minjae changes
+
+
+    # minjae changes  
+    wheelbase: 0.33
+    max_steering_angle: 0.4189
+    max_path_distance: 1.00
+    max_heading_error: 1.0472  # 60 deg
+    search_back_points: 8
+    search_forward_points: 30
+
+    target_speed: 4.0
+    min_speed: 0.7
+    max_speed: 4.0
+    corner_slowdown_gain: 0.3 # 코너 감속 강화 
+
+    # 속도 비례 lookahead: L = clamp(time * v, min, max)
+    lookahead_time: 0.30
+    lookahead_min: 0.35
+    lookahead_max: 1.20
+
+    # 곡률 선형 강조: v = sqrt(a_v / kappa)
+    max_lateral_acceleration: 4.0
+    curvature_window_start: 0.5
+    curvature_window_end: 1.5
+    curvature_stride: 0.20
+    # minjae changes
+
+
+    # minjae changes
+    # ERPM/서보 변환은 차량의 ackermann_to_vesc 가 담당하므로 제거.
+    # minjae changes
+
+    control_rate: 50.0
+    odom_timeout: 0.50
+    path_timeout: 2.00
