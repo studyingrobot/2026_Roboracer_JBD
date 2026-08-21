@@ -68,19 +68,19 @@ bridge:
 
     # Static-obstacle experiments. A negative seed chooses fresh randomness
     # for every placement; use a non-negative seed for reproducible runs.
-    random_obstacles_enabled: false
+    random_obstacles_enabled: true
     random_obstacle_count: 2
-    random_obstacle_seed: -1
+    random_obstacle_seed: 42 # 0 이상이면 고정 (매번 같은 자리)
     randomize_obstacles_on_reset: false
-    randomize_obstacles_on_lap: true
+    randomize_obstacles_on_lap: false
     obstacle_path_csv: '/sim_ws/src/planning/waypoints/track03_centerline.csv'
     obstacle_length: 0.20
     obstacle_width: 0.12
     obstacle_height: 0.20
-    obstacle_lateral_offset: 0.16
+    obstacle_lateral_offset: 0.0 # 가운데 배치
     obstacle_start_clearance: 1.50
     obstacle_min_spacing: 3.00
-    obstacle_passage_offset: 0.18
+    obstacle_passage_offset: 0.30
     # Match the local planner's map_clearance so every generated obstacle has
     # at least one passage that the planner can actually accept.
     obstacle_passage_radius: 0.19

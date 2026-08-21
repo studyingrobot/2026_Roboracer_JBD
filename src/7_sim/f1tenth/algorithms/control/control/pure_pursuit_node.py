@@ -3,10 +3,16 @@ import math
 import rclpy
 from rclpy.duration import Duration
 from rclpy.node import Node
+# minjae changes
+from rclpy.parameter import Parameter
+# minjae changes
 from rclpy.time import Time
 
 from ackermann_msgs.msg import AckermannDriveStamped
 from nav_msgs.msg import Odometry, Path
+# minjae changes
+from rcl_interfaces.msg import SetParametersResult
+# minjae changes
 from std_msgs.msg import Float64
 from std_srvs.srv import SetBool
 from tf2_ros import Buffer, TransformException, TransformListener
@@ -28,7 +34,11 @@ class PurePursuitNode(Node):
         self.declare_parameter('real_servo_topic', '/commands/servo/position')
 
         self.declare_parameter('wheelbase', 0.33)
-        self.declare_parameter('lookahead_distance', 0.70)
+
+        # minjae changes
+        # self.declare_parameter('lookahead_distance', 0.70)
+        # minjae changes
+
         self.declare_parameter('max_steering_angle', 0.4189)
         self.declare_parameter('max_path_distance', 1.00)
         self.declare_parameter('max_heading_error', 1.0472)
@@ -40,6 +50,21 @@ class PurePursuitNode(Node):
         self.declare_parameter('max_speed', 0.80)
         self.declare_parameter('corner_slowdown_gain', 0.55)
 
+
+        # minjae changes
+        # Speed-proportional lookahead: L = clamp(time * v, min, max)
+        self.declare_parameter('lookahead_time', 0.30)
+        self.declare_parameter('lookahead_min', 0.35)
+        self.declare_parameter('lookahead_max', 1.20)
+
+        # Curvature speed cap: v = sqrt(a_y / kappa)
+        self.declare_parameter('max_lateral_acceleration', 4.0)
+        self.declare_parameter('curvature_window_start', 0.5)
+        self.declare_parameter('curvature_window_end', 1.5)
+        self.declare_parameter('curvature_stride', 0.20)
+        # minjae changes
+
+        
         self.declare_parameter('speed_to_erpm_gain', 3000.0)
         self.declare_parameter('speed_to_erpm_offset', 0.0)
         self.declare_parameter('servo_center', 0.5)
@@ -53,6 +78,12 @@ class PurePursuitNode(Node):
 
         self.drive_mode = self.get_parameter('drive_mode').value
         self.enabled = bool(self.get_parameter('enabled').value)
+        # minjae changes
+        # set_parameters() 가 on_set_parameters 를 다시 부르는데,
+        # 그때 우리 자신의 동기화 쓰기를 외부 start 요청으로 오인해
+        # 거부하지 않도록 막는 플래그.
+        self._syncing_enabled_param = False
+        # minjae changes
 
         self.global_frame_id = self.get_parameter('global_frame_id').value
         self.base_frame_id = self.get_parameter('base_frame_id').value
@@ -63,8 +94,12 @@ class PurePursuitNode(Node):
         self.real_servo_topic = self.get_parameter('real_servo_topic').value
 
         self.wheelbase = float(self.get_parameter('wheelbase').value)
-        self.lookahead_distance = float(
-            self.get_parameter('lookahead_distance').value)
+
+        # minjae changes
+        # self.lookahead_distance = float(
+        #     self.get_parameter('lookahead_distance').value)
+        # minjae changes
+
         self.max_steering_angle = float(
             self.get_parameter('max_steering_angle').value)
         self.max_path_distance = float(
@@ -81,6 +116,26 @@ class PurePursuitNode(Node):
         self.max_speed = float(self.get_parameter('max_speed').value)
         self.corner_slowdown_gain = float(
             self.get_parameter('corner_slowdown_gain').value)
+
+
+        # minjae changes
+        self.lookahead_time = float(
+            self.get_parameter('lookahead_time').value)
+        self.lookahead_min = float(
+            self.get_parameter('lookahead_min').value)
+        self.lookahead_max = float(
+            self.get_parameter('lookahead_max').value)
+
+        self.max_lateral_acceleration = float(
+            self.get_parameter('max_lateral_acceleration').value)
+        self.curvature_window_start = float(
+            self.get_parameter('curvature_window_start').value)
+        self.curvature_window_end = float(
+            self.get_parameter('curvature_window_end').value)
+        self.curvature_stride = float(
+            self.get_parameter('curvature_stride').value)
+        # minjae changes
+
 
         self.speed_to_erpm_gain = float(
             self.get_parameter('speed_to_erpm_gain').value)
@@ -100,6 +155,11 @@ class PurePursuitNode(Node):
 
         self.current_odom = None
         self.current_path = None
+
+        # minjae changes
+        self.path_curvature = None
+        # minjae changes
+
         self.last_odom_time = None
         self.last_path_time = None
         self.nearest_index = None
@@ -123,6 +183,9 @@ class PurePursuitNode(Node):
 
         self.enable_service = self.create_service(
             SetBool, '/control/enable', self.enable_callback)
+        # minjae changes
+        self.add_on_set_parameters_callback(self.on_set_parameters)
+        # minjae changes
         self.timer = self.create_timer(
             1.0 / max(control_rate, 1.0), self.control_loop)
 
@@ -150,9 +213,57 @@ class PurePursuitNode(Node):
         if self.current_path is None or len(self.current_path.poses) != len(msg.poses):
             self.nearest_index = None
         self.current_path = msg
+
+        # minjae changes
+        self.path_curvature = self.compute_path_curvature(msg)
+        # minjae changes
+
         self.last_path_time = self.get_clock().now()
 
+    # minjae changes
     def enable_callback(self, request, response):
+        """원래 핸들러를 돌린 뒤 결과를 파라미터에 반영한다.
+
+        기존에는 self.enabled 만 바뀌고 파라미터는 선언값 그대로여서,
+        차가 달리는 중에도 `ros2 param get enabled` 가 False 를 반환했다.
+        """
+        response = self._enable_callback_impl(request, response)
+        self._sync_enabled_param()
+        return response
+
+    def _sync_enabled_param(self):
+        """self.enabled 를 'enabled' 파라미터에 되쓴다."""
+        if bool(self.get_parameter('enabled').value) == self.enabled:
+            return
+        self._syncing_enabled_param = True
+        try:
+            self.set_parameters(
+                [Parameter('enabled', Parameter.Type.BOOL, self.enabled)])
+        finally:
+            self._syncing_enabled_param = False
+
+    def on_set_parameters(self, params):
+        """param set 으로 정지는 허용하되, 출발은 거부한다.
+
+        출발은 서비스를 거쳐야 한다. 경로 이탈 거리와 헤딩 오차 검사가
+        거기에 있어서, 파라미터로 바로 켜면 그 검사를 건너뛰게 된다.
+        """
+        for param in params:
+            if param.name != 'enabled' or self._syncing_enabled_param:
+                continue
+            if param.value:
+                return SetParametersResult(
+                    successful=False,
+                    reason='Use the /control/enable service to start; '
+                           'it runs the path distance and heading checks.')
+            self.enabled = False
+            self.nearest_index = None
+            self.publish_stop()
+            self.get_logger().warn('Pure Pursuit stopped via parameter')
+        return SetParametersResult(successful=True)
+    # minjae changes
+
+    def _enable_callback_impl(self, request, response):
         if not request.data:
             self.enabled = False
             self.nearest_index = None
@@ -257,6 +368,84 @@ class PurePursuitNode(Node):
                                 self.search_forward_points + 1)
         ]
 
+
+    # minjae changes
+    def current_lookahead(self, speed):
+        """Preview distance proportional to speed, bounded."""
+        return self.clamp(
+            self.lookahead_time * speed,
+            self.lookahead_min,
+            self.lookahead_max)
+
+    def compute_path_curvature(self, msg):
+        """Menger curvature per point, sampled at a fixed arc-length stride."""
+        poses = msg.poses
+        count = len(poses)
+        if count < 5:
+            return None
+
+        # The local planner resamples at 0.04 m while the raw raceline is at
+        # 0.20 m. Pick a stride so the three sample points stay far enough
+        # apart to give a stable radius whatever the publisher spacing is.
+        spacings = sorted(
+            math.hypot(
+                poses[(i + 1) % count].pose.position.x
+                - poses[i].pose.position.x,
+                poses[(i + 1) % count].pose.position.y
+                - poses[i].pose.position.y)
+            for i in range(count))
+        median = spacings[count // 2]
+        if median < 1e-6:
+            return None
+        stride = max(1, int(round(self.curvature_stride / median)))
+        if count < 2 * stride + 1:
+            return None
+
+        curvature = []
+        for idx in range(count):
+            p1 = poses[(idx - stride) % count].pose.position
+            p2 = poses[idx].pose.position
+            p3 = poses[(idx + stride) % count].pose.position
+            a = math.hypot(p2.x - p1.x, p2.y - p1.y)
+            b = math.hypot(p3.x - p2.x, p3.y - p2.y)
+            c = math.hypot(p3.x - p1.x, p3.y - p1.y)
+            if a < 1e-6 or b < 1e-6 or c < 1e-6:
+                curvature.append(0.0)
+                continue
+            cross = ((p2.x - p1.x) * (p3.y - p1.y)
+                     - (p2.y - p1.y) * (p3.x - p1.x))
+            curvature.append(2.0 * abs(cross) / (a * b * c))
+        return curvature
+
+    def forward_curvature(self):
+        """Worst |kappa| in the forward window, or None when unavailable."""
+        if self.path_curvature is None or self.nearest_index is None:
+            return None
+        poses = self.current_path.poses
+        count = len(poses)
+        if count != len(self.path_curvature):
+            return None
+
+        travelled = 0.0
+        previous = poses[self.nearest_index].pose.position
+        worst = 0.0
+        samples = 0
+        for offset in range(1, count):
+            idx = (self.nearest_index + offset) % count
+            point = poses[idx].pose.position
+            travelled += math.hypot(
+                point.x - previous.x, point.y - previous.y)
+            previous = point
+            if travelled < self.curvature_window_start:
+                continue
+            if travelled > self.curvature_window_end:
+                break
+            worst = max(worst, self.path_curvature[idx])
+            samples += 1
+        return worst if samples else None
+    # minjae changes
+
+
     def nearest_path_state(self, x, y):
         poses = self.current_path.poses
         count = len(poses)
@@ -277,7 +466,9 @@ class PurePursuitNode(Node):
             following.y - previous.y, following.x - previous.x)
         return nearest_idx, nearest_dist, path_heading
 
-    def find_lookahead_point(self, x, y, yaw):
+    # minjae changes
+    # def find_lookahead_point(self, x, y, yaw):
+    def find_lookahead_point(self, x, y, yaw, speed): # minjae changes
         poses = self.current_path.poses
         count = len(poses)
         if count < 2:
@@ -293,6 +484,10 @@ class PurePursuitNode(Node):
         if abs(heading_error) > self.max_heading_error:
             return None
 
+        # minjae changes
+        lookahead = self.current_lookahead(speed)
+        # minjae changes
+
         travelled = 0.0
         previous = poses[nearest_idx].pose.position
         for offset in range(1, count + 1):
@@ -301,7 +496,9 @@ class PurePursuitNode(Node):
             travelled += math.hypot(point.x - previous.x, point.y - previous.y)
             previous = point
 
-            if travelled < self.lookahead_distance:
+            # minjae changes
+            # if travelled < self.lookahead_distance:
+            if travelled < lookahead:  # minjae changes
                 continue
 
             dx = point.x - x
@@ -321,11 +518,35 @@ class PurePursuitNode(Node):
         return self.clamp(
             steering, -self.max_steering_angle, self.max_steering_angle)
 
+
+    # minjae changes
     def compute_speed(self, steering):
         steer_ratio = abs(steering) / max(self.max_steering_angle, 1e-6)
         speed = self.target_speed * (
             1.0 - self.corner_slowdown_gain * steer_ratio)
-        return self.clamp(speed, self.min_speed, self.max_speed)
+      
+        # return self.clamp(speed, self.min_speed, self.max_speed)
+
+        # Anticipatory cap from a_y = v^2 * kappa on the path ahead.
+        curvature = self.forward_curvature()
+        curve_speed = float('inf')
+        if curvature is not None:
+            curve_speed = math.sqrt(
+                self.max_lateral_acceleration / max(curvature, 1e-3))
+            speed = min(speed, curve_speed)
+
+        speed = self.clamp(speed, self.min_speed, self.max_speed)
+
+        # Tuning aid: delete this log block once the gains are settled.
+        self.get_logger().info(
+            'kappa=%.3f curve_v=%.2f cmd_v=%.2f' % (
+                curvature if curvature is not None else -1.0,
+                curve_speed, speed),
+            throttle_duration_sec=0.5)
+
+        return speed
+    # minjae changes
+
 
     def publish_drive(self, speed, steering):
         if self.drive_mode == 'sim':
@@ -393,7 +614,14 @@ class PurePursuitNode(Node):
             self.warn_throttled('Safety stop: TF unavailable: ' + str(error))
             return
 
-        lookahead = self.find_lookahead_point(x, y, yaw)
+
+        # minjae changes
+        # lookahead = self.find_lookahead_point(x, y, yaw)
+        speed = max(0.0, float(self.current_odom.twist.twist.linear.x))
+        lookahead = self.find_lookahead_point(x, y, yaw, speed)
+        # minjae changes
+
+
         if lookahead is None:
             self.publish_stop()
             self.warn_throttled(

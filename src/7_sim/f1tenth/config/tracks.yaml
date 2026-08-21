@@ -22,7 +22,7 @@ tracks:
   0809_test_6:
     map_path: /sim_ws/src/f1tenth_gym_ros/maps/0809_test_6_map
     map_ext: .pgm
-    centerline: /sim_ws/src/planning/waypoints/0809_test_6_raceline_2.csv
-    raceline: /sim_ws/src/planning/waypoints/0809_test_6_raceline_2.csv
+    centerline: /sim_ws/src/planning/waypoints/0809_test_6_raceline_3.csv
+    raceline: /sim_ws/src/planning/waypoints/0809_test_6_raceline_3.csv
     start: [0.5485, 2.2610, -2.3838]
-    friction_mu: 1.0489
+    friction_mu: 1.0489 # 마찰계수

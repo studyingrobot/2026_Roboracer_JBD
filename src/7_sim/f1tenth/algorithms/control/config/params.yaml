@@ -13,19 +13,32 @@ pure_pursuit_node:
     real_speed_topic: "/commands/motor/speed"
     real_servo_topic: "/commands/servo/position"
 
+
+    # minjae changes  
     wheelbase: 0.33
-    lookahead_distance: 0.95
     max_steering_angle: 0.4189
     max_path_distance: 1.00
     max_heading_error: 1.0472  # 60 deg
     search_back_points: 8
     search_forward_points: 30
 
-    # First closed-loop test: deliberately conservative.
-    target_speed: 2.4
+    target_speed: 10.0
     min_speed: 0.7
-    max_speed: 2.8
-    corner_slowdown_gain: 0.8 # 코너 감속 강화 
+    max_speed: 10.0
+    corner_slowdown_gain: 0.3 # 코너 감속 강화 
+
+    # 속도 비례 lookahead: L = clamp(time * v, min, max)
+    lookahead_time: 0.30
+    lookahead_min: 0.35
+    lookahead_max: 1.20
+
+    # 곡률 선형 강조: v = sqrt(a_v / kappa)
+    max_lateral_acceleration: 4.0
+    curvature_window_start: 0.5
+    curvature_window_end: 1.5
+    curvature_stride: 0.20
+    # minjae changes
+
 
     speed_to_erpm_gain: 3000.0
     speed_to_erpm_offset: 0.0
