@@ -5,6 +5,9 @@ import math
 import numpy as np
 
 
+QUINTIC_SMOOTHSTEP_MAX_SECOND_DERIVATIVE = 10.0 * math.sqrt(3.0) / 3.0
+
+
 def angle_difference(target, source):
     """Return the wrapped signed angle from source to target."""
     return math.atan2(math.sin(target - source), math.cos(target - source))
@@ -26,6 +29,120 @@ def ordered_candidate_offsets(offsets, locked_offset, obstacle_lateral):
     else:
         offsets.sort(key=lambda value: (value < 0.0, abs(value)))
     return offsets
+
+
+def adaptive_candidate_offsets(
+        obstacle_lateral, required_clearance, spacing, count,
+        maximum_offset):
+    """
+    Generate map-independent Frenet pass candidates around an obstacle.
+
+    The first candidate on either side just clears the measured obstacle and
+    subsequent candidates add a small lateral margin.  Map collision checking
+    remains responsible for rejecting candidates that leave the drivable
+    corridor, so no track coordinates or preferred side are embedded here.
+    """
+    required_clearance = max(0.0, float(required_clearance))
+    spacing = max(1e-3, float(spacing))
+    count = max(1, int(count))
+    maximum_offset = max(0.0, float(maximum_offset))
+    obstacle_lateral = float(obstacle_lateral)
+
+    values = [0.0]
+    left_start = obstacle_lateral + required_clearance
+    right_start = obstacle_lateral - required_clearance
+    for index in range(count):
+        left = left_start + index * spacing
+        right = right_start - index * spacing
+        if abs(left) <= maximum_offset + 1e-9:
+            values.append(left)
+        if abs(right) <= maximum_offset + 1e-9:
+            values.append(right)
+
+    # Preserve deterministic ordering while removing numerically identical
+    # candidates (for example when required_clearance is zero).
+    unique = []
+    for value in values:
+        if not any(abs(value - other) < 1e-6 for other in unique):
+            unique.append(float(value))
+    return unique
+
+
+def minimum_quintic_transition_length(offset, maximum_curvature):
+    """
+    Approximate the minimum smoothstep length for a curvature constraint.
+
+    A quintic Frenet shift has a known maximum second derivative.  This bound
+    makes high-speed detours longer and smoother without using map-specific
+    coordinates.  The caller still checks the resulting path against the map.
+    """
+    offset = abs(float(offset))
+    maximum_curvature = max(1e-3, float(maximum_curvature))
+    return math.sqrt(
+        QUINTIC_SMOOTHSTEP_MAX_SECOND_DERIVATIVE
+        * offset / maximum_curvature)
+
+
+def quintic_smoothstep(progress):
+    """Evaluate the 0-to-1 quintic smoothstep used by lateral transitions."""
+    progress = np.clip(np.asarray(progress, dtype=float), 0.0, 1.0)
+    return (
+        10.0 * progress ** 3
+        - 15.0 * progress ** 4
+        + 6.0 * progress ** 5)
+
+
+def minimum_obstacle_transition_length(
+        offset, clearance_radius, resolution=0.01):
+    """
+    Return the shortest quintic transition that stays outside an obstacle disc.
+
+    ``ClosedPathGeometry.offset_bump`` only reaches its full lateral offset at
+    the obstacle itself, so at arc distance ``d`` from it the path is aside by
+    ``offset * smoothstep(1 - d / length)`` while the disc demands
+    ``sqrt(clearance_radius**2 - d**2)``.  A transition comparable to or
+    shorter than the clearance radius therefore clips the disc sideways even
+    though the endpoint offset alone would clear it, and every candidate on
+    both sides is rejected at once.  Bisect for the smallest length whose
+    smoothstep dominates the disc across the whole overlap.
+
+    The requirement follows from the measured obstacle radius and the vehicle
+    geometry only, so it carries over to any track or obstacle size.
+    """
+    offset = abs(float(offset))
+    clearance_radius = max(0.0, float(clearance_radius))
+    if clearance_radius <= 0.0:
+        return 0.0
+    if offset <= clearance_radius:
+        # No transition length can clear the disc; the candidate is rejected
+        # by the collision check regardless of the window it is given.
+        return float('inf')
+
+    resolution = max(1e-3, float(resolution))
+    distances = np.arange(0.0, clearance_radius + resolution, resolution)
+    required = np.sqrt(np.maximum(
+        clearance_radius * clearance_radius - distances * distances, 0.0))
+
+    def clears(length):
+        lateral = offset * quintic_smoothstep(1.0 - distances / length)
+        return bool(np.all(lateral >= required))
+
+    low = 0.0
+    high = clearance_radius
+    for _ in range(32):
+        if clears(high):
+            break
+        low = high
+        high *= 2.0
+    else:
+        return float('inf')
+    for _ in range(40):
+        middle = 0.5 * (low + high)
+        if clears(middle):
+            high = middle
+        else:
+            low = middle
+    return float(high)
 
 
 def speed_dependent_horizon(
@@ -141,14 +258,8 @@ class ClosedPathGeometry:
             (delta[before] + before_distance) / before_distance, 0.0, 1.0)
         after_progress = np.clip(
             delta[after] / after_distance, 0.0, 1.0)
-        weights[before] = (
-            10.0 * before_progress ** 3
-            - 15.0 * before_progress ** 4
-            + 6.0 * before_progress ** 5)
-        weights[after] = 1.0 - (
-            10.0 * after_progress ** 3
-            - 15.0 * after_progress ** 4
-            + 6.0 * after_progress ** 5)
+        weights[before] = quintic_smoothstep(before_progress)
+        weights[after] = 1.0 - quintic_smoothstep(after_progress)
         return self.points + self.normals * (offset * weights[:, None])
 
     def forward_distance(self, start_s, target_s):
@@ -262,12 +373,22 @@ def update_tracked_obstacles(
 
         matched_indices.add(best_index)
         track = tracks[best_index]
-        track['center'] = 0.65 * track['center'] + 0.35 * center
+        # Competition obstacles are static. A running mean prevents the
+        # visible LiDAR surface from moving the estimated center and Frenet
+        # offset as the car changes viewing angle around the same object.
+        previous_hits = max(1, int(track.get('hits', 1)))
+        observation_weight = 1.0 / (previous_hits + 1.0)
+        track['center'] = (
+            (1.0 - observation_weight) * track['center']
+            + observation_weight * center)
         track['radius'] = max(float(track['radius']), float(radius))
-        track['s'] = 0.65 * float(track['s']) + 0.35 * float(s_value)
+        track['s'] = (
+            (1.0 - observation_weight) * float(track['s'])
+            + observation_weight * float(s_value))
         track['lateral'] = (
-            0.65 * float(track['lateral']) + 0.35 * float(lateral))
-        track['hits'] = int(track.get('hits', 1)) + 1
+            (1.0 - observation_weight) * float(track['lateral'])
+            + observation_weight * float(lateral))
+        track['hits'] = previous_hits + 1
         track['last_seen'] = float(now_seconds)
 
     return tracks, next_id

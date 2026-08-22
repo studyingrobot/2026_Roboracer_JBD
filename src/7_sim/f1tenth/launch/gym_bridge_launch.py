@@ -48,6 +48,10 @@ def _launch_setup(context, config, config_dict):
         'obstacle_path_csv': centerline,
         'random_obstacles_enabled': _as_bool(
             LaunchConfiguration('obstacles').perform(context)),
+        # 회피를 두 번 이상 비교하려면 장애물 배치가 재현돼야 한다.
+        # -1 은 매번 무작위. 실차 bringup 은 이미 obstacle_seed 를 넘긴다.
+        'random_obstacle_seed': int(
+            LaunchConfiguration('obstacle_seed').perform(context)),
     }
     has_opp = parameters['num_agent'] > 1
 
@@ -98,9 +102,24 @@ def _launch_setup(context, config, config_dict):
             executable='amcl',
             name='amcl',
             output='screen',
-            parameters=[os.path.join(
-                get_package_share_directory('f1tenth_gym_ros'),
-                'config', 'amcl.yaml')]
+            parameters=[
+                os.path.join(
+                    get_package_share_directory('f1tenth_gym_ros'),
+                    'config', 'amcl.yaml'),
+                # 초기 포즈는 차를 놓는 위치와 같아야 한다.  amcl.yaml 에
+                # 하드코딩해 두면 tracks.yaml 의 start 를 바꿀 때마다 두 곳을
+                # 손으로 맞춰야 하고, 어긋난 만큼이 그대로 위치추정 오차로
+                # 잡힌다.  gym_bridge 가 쓰는 값을 그대로 넘긴다.
+                {
+                    'initial_pose.x': float(
+                        LaunchConfiguration('start_x').perform(context)),
+                    'initial_pose.y': float(
+                        LaunchConfiguration('start_y').perform(context)),
+                    'initial_pose.z': 0.0,
+                    'initial_pose.yaw': float(
+                        LaunchConfiguration('start_yaw').perform(context)),
+                },
+            ]
         ),
         Node(
             package='robot_state_publisher',
@@ -152,6 +171,7 @@ def generate_launch_description():
         DeclareLaunchArgument(
             'friction', default_value=str(parameters['friction_mu'])),
         DeclareLaunchArgument('obstacles', default_value='false'),
+        DeclareLaunchArgument('obstacle_seed', default_value='-1'),
         DeclareLaunchArgument('rviz', default_value='true'),
         OpaqueFunction(
             function=_launch_setup,

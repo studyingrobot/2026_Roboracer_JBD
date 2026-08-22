@@ -30,9 +30,9 @@ minjae_pp_node:
     search_back_points: 8
     search_forward_points: 30
 
-    target_speed: 4.0
+    target_speed: 7.0
     min_speed: 0.7
-    max_speed: 4.0
+    max_speed: 7.0
     corner_slowdown_gain: 0.3 # 코너 감속 강화 
 
     # 속도 비례 lookahead: L = clamp(time * v, min, max)

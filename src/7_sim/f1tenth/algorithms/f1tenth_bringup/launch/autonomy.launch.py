@@ -1,4 +1,5 @@
 import math
+import re
 import os
 
 import yaml
@@ -12,6 +13,18 @@ from launch.actions import (
 )
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration
+
+
+def _speed_from_profile(profile_name, fallback='5.5'):
+    """mpc_profile=speed_<m/s> 가 담은 속도.  규약을 벗어나면 fallback."""
+    if not profile_name.startswith('speed_'):
+        return fallback
+    encoded = profile_name[len('speed_'):]
+    if re.fullmatch(r'\d+(?:\.\d+)?', encoded):
+        return encoded
+    if re.fullmatch(r'\d+_\d+', encoded):
+        return encoded.replace('_', '.', 1)
+    return fallback
 
 
 def _include(package, launch_file, arguments):
@@ -93,6 +106,15 @@ def _launch_setup(context, catalog_path):
     track = tracks[track_name]
     controller = LaunchConfiguration('controller').perform(context)
     mpc_profile = LaunchConfiguration('mpc_profile').perform(context)
+    # 플래너가 발행하는 /planning/speed_limit 의 상한이다.  제어기가 실제로
+    # 노리는 속도와 같아야 한다.  5.5 로 고정해 두던 동안 시뮬에서는 상한이
+    # 사실상 없어서, 요청 속도를 그대로 쓰는 실차(real 모드)와 회피 중 감속
+    # 거동이 달랐다.  minjae_pp 는 speed:= 하나만 쓰고 나머지는
+    # mpc_profile=speed_<m/s> 규약을 따르므로 제어기별로 갈라 뽑는다.
+    if controller == 'minjae_pp':
+        planning_speed = LaunchConfiguration('speed').perform(context)
+    else:
+        planning_speed = _speed_from_profile(mpc_profile)
     friction_arg = LaunchConfiguration('friction').perform(context)
     friction = track['friction_mu'] if friction_arg == 'auto' else friction_arg
     obstacle_mode = LaunchConfiguration('obstacles').perform(context)
@@ -107,6 +129,8 @@ def _launch_setup(context, catalog_path):
         'centerline': track['centerline'],
         'friction': friction,
         'obstacles': obstacle_mode,
+        'obstacle_seed': LaunchConfiguration(
+            'obstacle_seed').perform(context),
         'rviz': LaunchConfiguration('rviz').perform(context),
     }
 
@@ -118,7 +142,7 @@ def _launch_setup(context, catalog_path):
         _include('planning', 'planning.launch.py', {
             'waypoint_csv': track['raceline'],
             'local_planner': obstacle_mode,
-            'maximum_planning_speed': '5.5',
+            'maximum_planning_speed': planning_speed,
             'max_lateral_acceleration': LaunchConfiguration(
                 'max_lateral_acceleration').perform(context),
             'planning_deceleration': LaunchConfiguration(
@@ -207,6 +231,8 @@ def generate_launch_description():
             description='auto uses the selected track friction_mu',
         ),
         DeclareLaunchArgument('obstacles', default_value='false'),
+        # 장애물 배치 재현용.  -1 은 매번 무작위.
+        DeclareLaunchArgument('obstacle_seed', default_value='-1'),
         DeclareLaunchArgument('rviz', default_value='true'),
         OpaqueFunction(
             function=_launch_setup,

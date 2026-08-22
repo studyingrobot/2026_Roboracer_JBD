@@ -13,7 +13,7 @@ def _as_bool(value):
 
 
 def _launch_setup(context):
-    params_file = LaunchConfiguration('planning_params_file').perform(context)
+    params_file = LaunchConfiguration('params_file').perform(context)
     local_planner = _as_bool(
         LaunchConfiguration('local_planner').perform(context))
     common_overrides = {
@@ -38,7 +38,7 @@ def _launch_setup(context):
         name='waypoint_planner_node',
         output='screen',
         parameters=[
-            LaunchConfiguration('planning_params_file').perform(context),
+            LaunchConfiguration('params_file').perform(context),
             waypoint_overrides,
         ],
     )]
@@ -57,7 +57,7 @@ def generate_launch_description():
     package_share = get_package_share_directory('planning')
     return LaunchDescription([
         DeclareLaunchArgument(
-            'planning_params_file',
+            'params_file',
             default_value=os.path.join(package_share, 'config', 'params.yaml'),
             description='Path to planning params.yaml'
         ),

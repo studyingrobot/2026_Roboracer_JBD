@@ -5,9 +5,10 @@ from collections import deque
 
 import numpy as np
 import rclpy
+from rclpy._rclpy_pybind11 import RCLError
 from rclpy.callback_groups import MutuallyExclusiveCallbackGroup
 from rclpy.duration import Duration
-from rclpy.executors import MultiThreadedExecutor
+from rclpy.executors import ExternalShutdownException, MultiThreadedExecutor
 from rclpy.node import Node
 from rclpy.qos import (
     QoSDurabilityPolicy,
@@ -27,7 +28,10 @@ from visualization_msgs.msg import Marker, MarkerArray
 
 from planning.local_planner_core import (
     ClosedPathGeometry,
+    adaptive_candidate_offsets,
     cluster_ordered_points,
+    minimum_obstacle_transition_length,
+    minimum_quintic_transition_length,
     ordered_candidate_offsets,
     path_curvature_percentile,
     sample_path_window,
@@ -76,15 +80,14 @@ class LocalObstaclePlannerNode(Node):
         self.declare_parameter('planning_reaction_time', 0.25)
         self.declare_parameter('planning_deceleration', 4.0)
         self.declare_parameter('planning_distance_margin', 0.50)
-        self.declare_parameter(
-            'candidate_offsets', [0.0, -0.20, 0.20, -0.24, 0.24,
-                                  -0.28, 0.28,
-                                  -0.36, 0.36, -0.44, 0.44,
-                                  -0.52, 0.52, -0.60, 0.60])
+        self.declare_parameter('candidate_offset_spacing', 0.04)
+        self.declare_parameter('candidate_offset_count', 6)
+        self.declare_parameter('maximum_candidate_offset', 0.70)
+        self.declare_parameter('candidate_clearance_buffer', 0.05)
         self.declare_parameter('avoidance_before_distance', 1.80)
         self.declare_parameter('avoidance_after_distance', 1.10)
         self.declare_parameter('maximum_avoidance_before_distance', 4.0)
-        self.declare_parameter('maximum_avoidance_after_distance', 2.0)
+        self.declare_parameter('maximum_avoidance_after_distance', 4.0)
         self.declare_parameter('avoidance_before_time', 0.60)
         self.declare_parameter('avoidance_after_time', 0.30)
         self.declare_parameter('path_sample_spacing', 0.04)
@@ -100,6 +103,7 @@ class LocalObstaclePlannerNode(Node):
         self.declare_parameter('scan_timeout', 0.50)
         self.declare_parameter('maximum_planning_speed', 5.5)
         self.declare_parameter('minimum_avoidance_speed', 0.60)
+        self.declare_parameter('infeasible_speed_limit', 0.60)
         self.declare_parameter('max_lateral_acceleration', 1.50)
         self.declare_parameter('candidate_curvature_weight', 0.35)
         self.declare_parameter('candidate_clearance_weight', 0.10)
@@ -144,9 +148,14 @@ class LocalObstaclePlannerNode(Node):
             self.get_parameter('planning_deceleration').value)
         self.planning_distance_margin = float(
             self.get_parameter('planning_distance_margin').value)
-        self.candidate_offsets = [
-            float(value)
-            for value in self.get_parameter('candidate_offsets').value]
+        self.candidate_offset_spacing = float(
+            self.get_parameter('candidate_offset_spacing').value)
+        self.candidate_offset_count = int(
+            self.get_parameter('candidate_offset_count').value)
+        self.maximum_candidate_offset = float(
+            self.get_parameter('maximum_candidate_offset').value)
+        self.candidate_clearance_buffer = float(
+            self.get_parameter('candidate_clearance_buffer').value)
         self.avoidance_before = float(
             self.get_parameter('avoidance_before_distance').value)
         self.avoidance_after = float(
@@ -190,6 +199,8 @@ class LocalObstaclePlannerNode(Node):
             self.get_parameter('scan_transform_delay').value)
         self.maximum_planning_speed = float(
             self.get_parameter('maximum_planning_speed').value)
+        self.infeasible_speed_limit = max(0.0, float(
+            self.get_parameter('infeasible_speed_limit').value))
         self.minimum_avoidance_speed = float(
             self.get_parameter('minimum_avoidance_speed').value)
         self.max_lateral_acceleration = float(
@@ -216,6 +227,8 @@ class LocalObstaclePlannerNode(Node):
         self.last_status = ''
         self.locked_obstacle_id = None
         self.locked_offset = None
+        self.locked_obstacle_s = None
+        self.locked_release_after = 0.0
 
         self.tf_buffer = Buffer(cache_time=Duration(seconds=5.0))
         # Keep TF reception independent from the comparatively expensive
@@ -574,17 +587,39 @@ class LocalObstaclePlannerNode(Node):
             self.obstacle_lookahead,
             self.maximum_planning_horizon)
 
-    def current_avoidance_distances(self):
+    def current_avoidance_distances(self, offset=0.0, clearance_radius=0.0):
         planning_speed = max(self.speed, self.maximum_planning_speed)
+        curvature_limit = (
+            self.max_lateral_acceleration
+            / max(planning_speed * planning_speed, 0.25))
+        transition_length = minimum_quintic_transition_length(
+            offset, curvature_limit)
+        # The configured maxima bound how much of a corner the detour may
+        # occupy, which is a wall-collision concern.  The obstacle geometry
+        # sets a hard lower bound instead: a shorter transition clips the
+        # clearance disc no matter how large the endpoint offset is, so it
+        # overrides the ceiling rather than being clamped by it.
+        obstacle_length = minimum_obstacle_transition_length(
+            offset, clearance_radius)
+        if not math.isfinite(obstacle_length):
+            # This offset cannot clear the disc at any length; keep the normal
+            # window and let candidate_is_safe reject it.
+            obstacle_length = 0.0
         before = max(
             self.avoidance_before,
+            transition_length,
             min(self.maximum_avoidance_before,
                 planning_speed * self.avoidance_before_time))
         after = max(
             self.avoidance_after,
+            transition_length,
             min(self.maximum_avoidance_after,
                 planning_speed * self.avoidance_after_time))
-        return before, after
+        before_limit = max(self.maximum_avoidance_before, obstacle_length)
+        after_limit = max(self.maximum_avoidance_after, obstacle_length)
+        return (
+            min(max(before, obstacle_length), before_limit),
+            min(max(after, obstacle_length), after_limit))
 
     def candidate_is_safe(
             self, points, vehicle_s, obstacles, planning_horizon,
@@ -600,7 +635,7 @@ class LocalObstaclePlannerNode(Node):
         minimum_map_clearance = float(np.min(map_values))
         map_extra_clearance = minimum_map_clearance - self.map_clearance
         if map_extra_clearance < 0.0:
-            return False, map_extra_clearance
+            return False, map_extra_clearance, map_extra_clearance
 
         minimum_obstacle_clearance = float('inf')
         for obstacle in obstacles:
@@ -614,8 +649,11 @@ class LocalObstaclePlannerNode(Node):
             minimum_obstacle_clearance = min(
                 minimum_obstacle_clearance, minimum)
             if minimum < 0.0:
-                return False, minimum
-        return True, min(map_extra_clearance, minimum_obstacle_clearance)
+                return False, minimum, map_extra_clearance
+        return (
+            True,
+            min(map_extra_clearance, minimum_obstacle_clearance),
+            map_extra_clearance)
 
     def candidate_curvature(self, points, vehicle_s, distance):
         local = sample_path_window(
@@ -746,39 +784,85 @@ class LocalObstaclePlannerNode(Node):
 
         vehicle_s, _, _ = self.path_geometry.project(vehicle_xy)
         planning_horizon = self.current_planning_horizon()
-        avoidance_before, avoidance_after = (
-            self.current_avoidance_distances())
         active = self.active_obstacles(vehicle_s)
         selected = self.path_geometry.points
         selected_offset = 0.0
+        selected_after = self.avoidance_after
         feasible = True
+        retained_avoidance = False
         candidate_results = []
+        fallback = None
+        fallback_offset = 0.0
+        fallback_clearance = -float('inf')
 
         if active:
             primary_forward, primary = active[0]
             if self.locked_obstacle_id != primary['id']:
                 self.locked_obstacle_id = primary['id']
                 self.locked_offset = None
+                self.locked_obstacle_s = float(primary['s'])
+                self.locked_release_after = self.avoidance_after
             collision_obstacles = [
                 obstacle for forward, obstacle in active
-                if forward <= primary_forward + avoidance_after]
+                if forward <= (
+                    primary_forward + self.maximum_avoidance_after)]
+            # candidate_is_safe treats every obstacle in range as a disc of
+            # this radius, so the pass offset and the transition length must
+            # both be derived from the largest of them, not from the nearest.
+            obstacle_clearance_radius = max(
+                self.vehicle_clearance
+                + obstacle['radius']
+                + self.obstacle_margin
+                for obstacle in collision_obstacles)
+            required_lateral_clearance = (
+                obstacle_clearance_radius
+                + self.candidate_clearance_buffer)
+            offsets = adaptive_candidate_offsets(
+                primary['lateral'],
+                required_lateral_clearance,
+                self.candidate_offset_spacing,
+                self.candidate_offset_count,
+                self.maximum_candidate_offset)
+            # Keep the previously selected Frenet target as an explicit
+            # candidate. LiDAR cluster centroids move by a few centimetres
+            # frame-to-frame; regenerating every candidate solely from that
+            # centroid would otherwise create avoidable steering chatter.
+            if (self.locked_offset is not None
+                    and abs(self.locked_offset)
+                    <= self.maximum_candidate_offset
+                    and not any(abs(
+                        self.locked_offset - value) < 1e-6
+                        for value in offsets)):
+                offsets.append(self.locked_offset)
             offsets = ordered_candidate_offsets(
-                self.candidate_offsets,
+                offsets,
                 self.locked_offset,
                 primary['lateral'])
             feasible = False
             best_score = float('inf')
             for offset in offsets:
+                candidate_before, candidate_after = (
+                    self.current_avoidance_distances(
+                        offset, obstacle_clearance_radius))
                 candidate = self.path_geometry.offset_bump(
                     primary['s'], offset,
-                    avoidance_before, avoidance_after)
-                safe, clearance = self.candidate_is_safe(
+                    candidate_before, candidate_after)
+                safe, clearance, map_clearance = self.candidate_is_safe(
                     candidate, vehicle_s, collision_obstacles,
-                    planning_horizon, avoidance_after)
+                    planning_horizon, candidate_after)
                 curvature = self.candidate_curvature(
                     candidate, vehicle_s, planning_horizon)
                 candidate_results.append((offset, clearance, curvature))
                 if not safe:
+                    # Only the obstacle radius is an estimate -- it is
+                    # inflated from a partial LiDAR surface -- so it is the
+                    # only term the crawl fallback may relax.  Map clearance
+                    # comes from the known occupancy grid, and a candidate
+                    # that fails it would drive into a wall.
+                    if map_clearance >= 0.0 and clearance > fallback_clearance:
+                        fallback = candidate
+                        fallback_offset = offset
+                        fallback_clearance = clearance
                     continue
                 score = (
                     abs(offset)
@@ -790,22 +874,58 @@ class LocalObstaclePlannerNode(Node):
                 if score < best_score:
                     selected = candidate
                     selected_offset = offset
+                    selected_after = candidate_after
                     best_score = score
                     feasible = True
             if feasible and abs(selected_offset) > 1e-3:
                 self.locked_offset = selected_offset
+                self.locked_obstacle_s = float(primary['s'])
+                self.locked_release_after = selected_after
         else:
-            self.locked_obstacle_id = None
-            self.locked_offset = None
+            # A static obstacle can disappear from the scan while alongside
+            # the vehicle. Keep the already validated avoidance path until
+            # the vehicle has travelled beyond its smooth return section.
+            # This uses path progress and the existing avoidance distance,
+            # not a track coordinate or a timing guess.
+            if (self.locked_obstacle_s is not None
+                    and self.locked_offset is not None
+                    and self.last_safe_path is not None):
+                forward_to_obstacle = self.path_geometry.forward_distance(
+                    vehicle_s, self.locked_obstacle_s)
+                obstacle_is_behind = (
+                    forward_to_obstacle > 0.5 * self.path_geometry.length)
+                distance_past = self.path_geometry.forward_distance(
+                    self.locked_obstacle_s, vehicle_s)
+                retained_avoidance = bool(
+                    not obstacle_is_behind
+                    or distance_past < self.locked_release_after)
+            if retained_avoidance:
+                selected = self.last_safe_path
+                selected_offset = self.locked_offset
+            else:
+                self.locked_obstacle_id = None
+                self.locked_offset = None
+                self.locked_obstacle_s = None
+                self.locked_release_after = 0.0
 
         if feasible:
             self.last_safe_path = selected.copy()
+            self.publish_path(selected)
+        elif fallback is not None:
+            # No candidate meets the full margin, which on a narrow track
+            # usually means the corridor is tighter than the configured
+            # buffer rather than that the gap is impassable.  Take the
+            # widest-clearance candidate and crawl through it; AEB below
+            # stays the hard guarantee against actual contact.
+            selected = fallback
+            selected_offset = fallback_offset
             self.publish_path(selected)
         elif self.last_safe_path is not None:
             self.publish_path(self.last_safe_path)
 
         avoidance.data = bool(
-            feasible and active and abs(selected_offset) > 1e-3)
+            retained_avoidance
+            or (active and abs(selected_offset) > 1e-3))
         critical_distance = (
             self.aeb_min_distance
             + self.vehicle_clearance
@@ -815,7 +935,10 @@ class LocalObstaclePlannerNode(Node):
         critical_stop = bool(
             self.ttc_stop
             and self.nearest_corridor_distance < critical_distance)
-        stop.data = bool(critical_stop or not feasible)
+        # Only imminent contact stops the car.  An infeasible candidate set
+        # used to raise the same emergency stop, which ended the run on any
+        # section narrower than the planning margin even with a passable gap.
+        stop.data = bool(critical_stop)
         self.stop_pub.publish(stop)
         self.avoidance_pub.publish(avoidance)
         speed_limit = self.maximum_planning_speed
@@ -827,6 +950,8 @@ class LocalObstaclePlannerNode(Node):
                 / max(selected_curvature, 1e-3))
             speed_limit = min(speed_limit, max(
                 self.minimum_avoidance_speed, curve_speed))
+        if not feasible:
+            speed_limit = min(speed_limit, self.infeasible_speed_limit)
         if stop.data:
             speed_limit = 0.0
         self.publish_speed_limit(speed_limit)
@@ -837,11 +962,21 @@ class LocalObstaclePlannerNode(Node):
             details = ','.join(
                 '%+.2f:clear=%+.2f:k=%.2f' % result
                 for result in candidate_results)
-            self.set_status('NO_COLLISION_FREE_PATH ' + details)
+            if fallback is None:
+                self.set_status('NO_CANDIDATE_PATH ' + details)
+            else:
+                self.set_status(
+                    'REDUCED_MARGIN_CRAWL offset=%+.2fm short=%.2fm '
+                    'limit=%.2fm/s %s'
+                    % (fallback_offset, -fallback_clearance, speed_limit,
+                       details))
         elif active and abs(selected_offset) > 1e-3:
             self.set_status(
                 'AVOIDING obstacle=%d offset=%+.2fm'
                 % (active[0][1]['id'], selected_offset))
+        elif retained_avoidance:
+            self.set_status(
+                'AVOIDING_LOCKED_PATH offset=%+.2fm' % selected_offset)
         elif active:
             self.set_status('OBSTACLE_CLEAR_OF_SELECTED_PATH')
         else:
@@ -858,13 +993,16 @@ def main(args=None):
     executor.add_node(node)
     try:
         executor.spin()
-    except KeyboardInterrupt:
+    except (KeyboardInterrupt, ExternalShutdownException, RCLError):
         pass
     finally:
-        executor.shutdown()
-        node.destroy_node()
-        if rclpy.ok():
-            rclpy.shutdown()
+        try:
+            executor.shutdown()
+            node.destroy_node()
+            if rclpy.ok():
+                rclpy.shutdown()
+        except (KeyboardInterrupt, RCLError):
+            pass
 
 
 if __name__ == '__main__':

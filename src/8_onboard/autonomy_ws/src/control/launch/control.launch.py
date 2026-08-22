@@ -101,6 +101,15 @@ def _launch_setup(context):
                         'max_lateral_acceleration': float(
                             LaunchConfiguration(
                                 'max_lateral_acceleration').perform(context)),
+                        # 감속도도 같은 이유로 넘긴다.  플래너는 런치의
+                        # max_longitudinal_deceleration 을 받는데 제어기만
+                        # yaml 의 2.00 에 묶여 있어서, 현장에서 측정값을
+                        # 런치 인자로 주면 앞의 코너까지 감속 가능한 속도를
+                        # 양쪽이 서로 다르게 계산했다.
+                        'speed_profile_deceleration': float(
+                            LaunchConfiguration(
+                                'max_longitudinal_deceleration').perform(
+                                    context)),
                     },
                 ],
             ),
