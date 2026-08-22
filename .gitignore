@@ -216,3 +216,8 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# ROS 2 / colcon workspaces (build/ is already ignored above)
+install/
+log/
+.colcon_install_layout
