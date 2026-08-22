@@ -21,7 +21,10 @@ minjae_pp_node:
 
     # minjae changes  
     wheelbase: 0.33
-    max_steering_angle: 0.4189
+    # 서보 포화각. steering_angle_to_servo_offset=0.465 가 서보 중앙(0.5)에서
+    # 벗어나 있어 좌우 한계가 비대칭이다(-0.4511 / +0.3785 rad).
+    # 좁은 쪽에 맞춰야 명령한 조향이 양방향 모두 실제로 나온다.
+    max_steering_angle: 0.3785
     max_path_distance: 1.00
     max_heading_error: 1.0472  # 60 deg
     search_back_points: 8
@@ -37,11 +40,16 @@ minjae_pp_node:
     lookahead_min: 0.35
     lookahead_max: 1.20
 
-    # 곡률 선형 강조: v = sqrt(a_v / kappa)
-    max_lateral_acceleration: 4.0
-    curvature_window_start: 0.5
-    curvature_window_end: 1.5
-    curvature_stride: 0.20
+    # 곡률 속도 프로파일: v = sqrt(a_y / kappa) 를 구한 뒤 경로 전체를
+    # 역방향으로 훑어 "앞의 코너까지 감속 가능한 속도" 로 낮춘다.
+    # 전방 창(window)과 트랙별 캡이 필요 없어 트랙 형상/길이와 무관하다.
+    # 타이어·노면 한계 [m/s^2].  launch 가 max_lateral_acceleration:=
+    # 인자로 덮어쓰며, 플래너(planning/config/params.yaml)와 항상
+    # 같은 값이 들어간다.  여기 값은 노드를 단독 실행할 때의 기본값.
+    # 현장 측정 전까지는 보수적으로 1.5 (실측 하한 1.46 바로 위).
+    max_lateral_acceleration: 1.5
+    curvature_stride: 0.20                # 곡률 샘플 간격 [m]
+    speed_profile_deceleration: 2.0       # 실제로 낼 수 있는 감속도 [m/s^2]
     # minjae changes
 
 

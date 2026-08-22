@@ -322,7 +322,7 @@ def generate_launch_description():
         DeclareLaunchArgument(
             'max_lateral_acceleration',
             default_value='1.50',
-            description='UNICORN L1 cornering limit in m/s^2',
+            description='Tyre and surface lateral limit in m/s^2',
         ),
         DeclareLaunchArgument(
             'max_longitudinal_acceleration',

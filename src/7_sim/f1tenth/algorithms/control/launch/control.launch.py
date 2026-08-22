@@ -79,6 +79,13 @@ def _launch_setup(context):
                         'max_speed': requested_speed,
                         'min_command_speed': float(LaunchConfiguration(
                             'min_command_speed').perform(context)),
+                        # 타이어/노면 한계는 플래너와 제어기가 같은 값을
+                        # 써야 한다.  이걸 넘기지 않던 동안 플래너는 1.50,
+                        # 제어기는 yaml 의 4.00 으로 돌아서 회피가 시작되는
+                        # 순간 속도 상한이 계단처럼 떨어졌다.
+                        'max_lateral_acceleration': float(
+                            LaunchConfiguration(
+                                'max_lateral_acceleration').perform(context)),
                     },
                 ],
             ),
@@ -251,7 +258,7 @@ def generate_launch_description():
         DeclareLaunchArgument(
             'max_lateral_acceleration',
             default_value='1.50',
-            description='UNICORN L1 cornering limit in m/s^2'),
+            description='Tyre and surface lateral limit in m/s^2'),
         DeclareLaunchArgument(
             'max_longitudinal_acceleration',
             default_value='2.0',

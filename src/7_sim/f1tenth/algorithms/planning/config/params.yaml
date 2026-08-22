@@ -29,16 +29,25 @@ local_obstacle_planner_node:
 
     detection_range: 6.0
     map_endpoint_clearance: 0.30
-    cluster_gap: 0.16
+    # 장애물 간 최소 거리가 1.0 m 로 보장되므로, 하나를 둘로 쪼개지
+    # 않을 만큼 키워도 둘이 하나로 붙지 않는다.
+    cluster_gap: 0.35
     cluster_min_points: 8
-    cluster_max_diameter: 0.55
-    path_obstacle_corridor: 0.55
+    # 0.5 x 0.5 m 를 45도에서 보면 폭이 대각선 0.707 m 까지 보인다.
+    # 1.0 m 미만이라 두 장애물이 한 클러스터로 승인되는 일은 없다.
+    cluster_max_diameter: 0.80
+    # 차 반폭 0.17 + 장애물 반경 0.36 = 0.53 에 여유를 더한 값.
+    path_obstacle_corridor: 0.90
     obstacle_memory_seconds: 0.8
     obstacle_confirmation_frames: 2
-    obstacle_match_distance: 0.35
-    # 0.20 x 0.12 m obstacle footprint의 외접원에 가까운 기본 반경.
-    obstacle_default_radius: 0.11
-    obstacle_max_radius: 0.12
+    # 최소 장애물 간격 1.0 m 의 절반 미만이어야 서로 오매칭되지 않는다.
+    obstacle_match_distance: 0.45
+    # 대회 고정 장애물은 0.5 x 0.5 m 미만. LiDAR 는 앞면만 보므로
+    # 관측 반경을 그대로 믿으면 과소평가된다.
+    #   default = 0.5 의 절반. 멀어서 점이 적을 때 쓰는 하한.
+    #   max     = 0.5 x 0.5 의 외접원 반경 0.354 에 맞춘 상한.
+    obstacle_default_radius: 0.25
+    obstacle_max_radius: 0.36
     obstacle_marker_radius_scale: 1.0
     obstacle_lookahead: 3.2
     # Speed-adaptive horizon = reaction + v^2/(2a) + margin, bounded here.
@@ -47,7 +56,16 @@ local_obstacle_planner_node:
     planning_deceleration: 4.0
     planning_distance_margin: 0.50
 
-    candidate_offsets: [0.0, -0.20, 0.20, -0.24, 0.24, -0.28, 0.28, -0.36, 0.36, -0.44, 0.44, -0.52, 0.52, -0.60, 0.60]
+    # Frenet pass candidates are generated from the measured obstacle radius
+    # and lateral position. No track-specific obstacle coordinates are used.
+    candidate_offset_spacing: 0.04
+    candidate_offset_count: 6
+    # 필요 횡클리어런스 = 0.17(차) + 0.36(장애물) + 0.02 + 0.05 = 0.60.
+    # 후보는 맵 여유로 다시 검증되므로 상한을 키워도 벽으로 가지 않는다.
+    maximum_candidate_offset: 1.10
+    # Small allowance for scan-surface centroid and real tracking error. This
+    # affects path clearance, not the visualized obstacle size or AEB range.
+    candidate_clearance_buffer: 0.05
     avoidance_before_distance: 1.80
     avoidance_after_distance: 1.10
     maximum_avoidance_before_distance: 4.0

@@ -69,11 +69,11 @@ class MinjaePPNode(Node):
         self.declare_parameter('lookahead_min', 0.35)
         self.declare_parameter('lookahead_max', 1.20)
 
-        # Curvature speed cap: v = sqrt(a_y / kappa)
+        # Curvature speed profile: v = sqrt(a_y / kappa), then a backward
+        # pass so every corner is reachable at its own required speed.
         self.declare_parameter('max_lateral_acceleration', 4.0)
-        self.declare_parameter('curvature_window_start', 0.5)
-        self.declare_parameter('curvature_window_end', 1.5)
         self.declare_parameter('curvature_stride', 0.20)
+        self.declare_parameter('speed_profile_deceleration', 2.0)
         # minjae changes
 
         
@@ -147,12 +147,10 @@ class MinjaePPNode(Node):
 
         self.max_lateral_acceleration = float(
             self.get_parameter('max_lateral_acceleration').value)
-        self.curvature_window_start = float(
-            self.get_parameter('curvature_window_start').value)
-        self.curvature_window_end = float(
-            self.get_parameter('curvature_window_end').value)
         self.curvature_stride = float(
             self.get_parameter('curvature_stride').value)
+        self.speed_profile_deceleration = max(1e-3, float(
+            self.get_parameter('speed_profile_deceleration').value))
         # minjae changes
 
 
@@ -172,6 +170,7 @@ class MinjaePPNode(Node):
 
         # minjae changes
         self.path_curvature = None
+        self.path_speed_profile = None
         # minjae changes
 
         # minjae changes
@@ -240,6 +239,8 @@ class MinjaePPNode(Node):
 
         # minjae changes
         self.path_curvature = self.compute_path_curvature(msg)
+        self.path_speed_profile = self.compute_speed_profile(
+            msg.poses, self.path_curvature)
         # minjae changes
 
         self.last_path_time = self.get_clock().now()
@@ -451,32 +452,61 @@ class MinjaePPNode(Node):
             curvature.append(2.0 * abs(cross) / (a * b * c))
         return curvature
 
-    def forward_curvature(self):
-        """Worst |kappa| in the forward window, or None when unavailable."""
-        if self.path_curvature is None or self.nearest_index is None:
+    def compute_speed_profile(self, poses, curvature):
+        """
+        Highest speed at each path point that still allows braking ahead.
+
+        Replaces the previous fixed-distance forward window.  A window has to
+        guess how far ahead to look, and that guess depends on speed, on the
+        chosen deceleration and on track length -- which is why it needed a
+        per-track cap.  Here the braking constraint is propagated backwards
+        around the whole closed path instead, so each corner reserves exactly
+        the distance it needs and nothing depends on the layout.
+
+        Runs once per received path, not per control cycle.
+        """
+        if curvature is None:
             return None
-        poses = self.current_path.poses
         count = len(poses)
-        if count != len(self.path_curvature):
+        if count < 2 or count != len(curvature):
             return None
 
-        travelled = 0.0
-        previous = poses[self.nearest_index].pose.position
-        worst = 0.0
-        samples = 0
-        for offset in range(1, count):
-            idx = (self.nearest_index + offset) % count
-            point = poses[idx].pose.position
-            travelled += math.hypot(
-                point.x - previous.x, point.y - previous.y)
-            previous = point
-            if travelled < self.curvature_window_start:
-                continue
-            if travelled > self.curvature_window_end:
-                break
-            worst = max(worst, self.path_curvature[idx])
-            samples += 1
-        return worst if samples else None
+        # Static limit from the friction circle: a_y = v^2 * kappa.
+        limit = [
+            min(self.max_speed,
+                math.sqrt(self.max_lateral_acceleration / max(k, 1e-3)))
+            for k in curvature
+        ]
+        spacing = [
+            math.hypot(
+                poses[(idx + 1) % count].pose.position.x
+                - poses[idx].pose.position.x,
+                poses[(idx + 1) % count].pose.position.y
+                - poses[idx].pose.position.y)
+            for idx in range(count)
+        ]
+
+        # The slowest point is already final -- nothing ahead can force it
+        # lower -- so starting the backward lap there converges in one pass
+        # even though the path is a closed loop.
+        start = min(range(count), key=limit.__getitem__)
+        twice_decel = 2.0 * self.speed_profile_deceleration
+        for step in range(1, count):
+            idx = (start - step) % count
+            ahead = (idx + 1) % count
+            reachable = math.sqrt(
+                limit[ahead] ** 2 + twice_decel * spacing[idx])
+            if reachable < limit[idx]:
+                limit[idx] = reachable
+        return limit
+
+    def profile_speed(self):
+        """Speed-profile value at the vehicle's current path index."""
+        if self.path_speed_profile is None or self.nearest_index is None:
+            return None
+        if len(self.path_speed_profile) != len(self.current_path.poses):
+            return None
+        return self.path_speed_profile[self.nearest_index]
     # minjae changes
 
 
@@ -558,15 +588,12 @@ class MinjaePPNode(Node):
         steer_ratio = abs(steering) / max(self.max_steering_angle, 1e-6)
         speed = self.target_speed * (
             1.0 - self.corner_slowdown_gain * steer_ratio)
-      
+
         # return self.clamp(speed, self.min_speed, self.max_speed)
 
-        # Anticipatory cap from a_y = v^2 * kappa on the path ahead.
-        curvature = self.forward_curvature()
-        curve_speed = float('inf')
-        if curvature is not None:
-            curve_speed = math.sqrt(
-                self.max_lateral_acceleration / max(curvature, 1e-3))
+        # Anticipatory limit from the precomputed braking profile.
+        curve_speed = self.profile_speed()
+        if curve_speed is not None:
             speed = min(speed, curve_speed)
 
         speed = self.clamp(speed, self.min_speed, self.max_speed)
@@ -593,9 +620,8 @@ class MinjaePPNode(Node):
 
         # Tuning aid: delete this log block once the gains are settled.
         self.get_logger().info(
-            'kappa=%.3f curve_v=%.2f cmd_v=%.2f' % (
-                curvature if curvature is not None else -1.0,
-                curve_speed, speed),
+            'profile_v=%.2f cmd_v=%.2f' % (
+                curve_speed if curve_speed is not None else -1.0, speed),
             throttle_duration_sec=0.5)
 
         return speed
