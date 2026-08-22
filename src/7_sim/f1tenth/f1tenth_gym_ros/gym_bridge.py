@@ -77,7 +77,7 @@ class GymBridge(Node):
         self.declare_parameter('scan_fov', 4.7)
         self.declare_parameter('scan_beams', 1080)
         self.declare_parameter(
-            'map_path', '/sim_ws/src/f1tenth_gym_ros/maps/0809_test_6_map')
+            'map_path', '/sim_ws/src/f1tenth_gym_ros/maps/track04')
         self.declare_parameter('map_img_ext', '.pgm')
         self.declare_parameter('num_agent', 1)
         self.declare_parameter('sx', 0.5485)
@@ -99,7 +99,7 @@ class GymBridge(Node):
         self.declare_parameter('randomize_obstacles_on_lap', True)
         self.declare_parameter(
             'obstacle_path_csv',
-            '/sim_ws/src/planning/waypoints/0809_test_6_raceline_3.csv')
+            '/sim_ws/src/planning/waypoints/track04_raceline.csv')
         self.declare_parameter('obstacle_length', 0.20)
         self.declare_parameter('obstacle_width', 0.12)
         self.declare_parameter('obstacle_height', 0.20)

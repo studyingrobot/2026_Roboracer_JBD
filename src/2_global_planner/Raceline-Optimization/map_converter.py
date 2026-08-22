@@ -12,7 +12,7 @@ from PIL import Image
 import os
 
 # ===== cell 3 =====
-MAP_NAME = "0809_test_6_map"
+MAP_NAME = "track04"
 
 TRACK_WIDTH_MARGIN = 0.0 # Extra Safety margin, in meters
 

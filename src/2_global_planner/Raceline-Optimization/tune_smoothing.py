@@ -29,7 +29,7 @@ width_opt 은 공짜가 아니다.  키우면 주행선이 중심선 쪽으로 �
 모르는 채로 내주게 된다.
 
 Usage:
-  python3 tune_smoothing.py --map_name 0809_test_6_map
+  python3 tune_smoothing.py --map_name track04
   python3 tune_smoothing.py --map_name <이름> --map-yaml <맵.yaml>
 """
 

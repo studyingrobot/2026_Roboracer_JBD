@@ -15,10 +15,10 @@ amcl:
     first_map_only: false
 
     initial_pose:
-      x: 0.5485
-      y: 2.2610
+      x: 1.3198
+      y: 2.2916
       z: 0.0
-      yaw: -2.3838
+      yaw: -2.0337
 
     alpha1: 0.2
     alpha2: 0.2

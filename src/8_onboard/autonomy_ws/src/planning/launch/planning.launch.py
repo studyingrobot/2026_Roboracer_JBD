@@ -64,7 +64,7 @@ def generate_launch_description():
         DeclareLaunchArgument(
             'waypoint_csv',
             default_value=os.path.join(
-                package_share, 'waypoints', '0809_test_6_raceline_3.csv'),
+                package_share, 'waypoints', 'track04_raceline.csv'),
             description='Optional waypoint/raceline CSV override'
         ),
         DeclareLaunchArgument('local_planner', default_value='true'),
