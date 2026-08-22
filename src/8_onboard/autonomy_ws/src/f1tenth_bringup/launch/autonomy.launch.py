@@ -282,12 +282,12 @@ def generate_launch_description():
     default_waypoint = os.path.join(
         get_package_share_directory('planning'),
         'waypoints',
-        'track03_raceline.csv',
+        '0809_test_6_raceline_3.csv',
     )
 
     return LaunchDescription([
         DeclareLaunchArgument('mode', default_value='sim'),
-        DeclareLaunchArgument('track', default_value='track03'),
+        DeclareLaunchArgument('track', default_value='0809_test_6'),
         DeclareLaunchArgument('waypoint_csv', default_value=default_waypoint),
         DeclareLaunchArgument(
             'controller',

@@ -46,7 +46,7 @@ bridge:
     scan_beams: 1080
 
     # map parameters
-    map_path: '/sim_ws/src/f1tenth_gym_ros/maps/track03'
+    map_path: '/sim_ws/src/f1tenth_gym_ros/maps/0809_test_6_map'
     map_img_ext: '.pgm'
     friction_mu: 1.0489
 
@@ -54,14 +54,14 @@ bridge:
     num_agent: 1
 
     # ego starting pose on map
-    sx: 0.2985
-    sy: 0.5926
-    stheta: -0.6205
+    sx: 0.5485
+    sy: 2.2610
+    stheta: -2.3838
 
     # opp starting pose on map
-    sx1: 2.0
-    sy1: 0.5
-    stheta1: 0.0
+    sx1: 1.2692
+    sy1: -0.2205
+    stheta1: -0.4858
 
     # teleop
     kb_teleop: True
@@ -73,7 +73,7 @@ bridge:
     random_obstacle_seed: 42 # 0 이상이면 고정 (매번 같은 자리)
     randomize_obstacles_on_reset: false
     randomize_obstacles_on_lap: false
-    obstacle_path_csv: '/sim_ws/src/planning/waypoints/track03_centerline.csv'
+    obstacle_path_csv: '/sim_ws/src/planning/waypoints/0809_test_6_raceline_3.csv'
     obstacle_length: 0.20
     obstacle_width: 0.12
     obstacle_height: 0.20

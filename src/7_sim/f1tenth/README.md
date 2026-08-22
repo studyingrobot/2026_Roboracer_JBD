@@ -4,7 +4,7 @@
 
 - 실차 저장소: [Kimz1xq/f1tenth-onboard](https://github.com/Kimz1xq/f1tenth-onboard)
 - 시뮬레이터: [F1TENTH Gym ROS](https://github.com/f1tenth/f1tenth_gym_ros)
-- 현재 지도/경로: `track03`
+- 현재 지도/경로: `0809_test_6`
 
 ## 구성 원칙
 
@@ -68,7 +68,7 @@ source /sim_ws/install/setup.bash
 
 ```bash
 ros2 launch f1tenth_bringup autonomy.launch.py \
-  mode:=sim track:=track03 \
+  mode:=sim track:=0809_test_6 \
   controller:=unicorn_l1 \
   mpc_profile:=speed_3.0 \
   obstacles:=true rviz:=true
@@ -78,7 +78,7 @@ ros2 launch f1tenth_bringup autonomy.launch.py \
 
 ```bash
 ros2 launch f1tenth_bringup autonomy.launch.py \
-  mode:=sim track:=track03 \
+  mode:=sim track:=0809_test_6 \
   controller:=unicorn_l1_dynamic \
   mpc_profile:=speed_3.0 \
   obstacles:=true rviz:=true
@@ -88,7 +88,7 @@ ros2 launch f1tenth_bringup autonomy.launch.py \
 
 ```bash
 ros2 launch f1tenth_bringup autonomy.launch.py \
-  mode:=sim track:=track03 \
+  mode:=sim track:=0809_test_6 \
   controller:=mpc \
   mpc_profile:=speed_3.0 \
   obstacles:=true rviz:=true

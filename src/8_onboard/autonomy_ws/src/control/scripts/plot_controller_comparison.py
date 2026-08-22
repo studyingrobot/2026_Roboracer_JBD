@@ -62,7 +62,7 @@ def main():
     axis.set_aspect('equal', adjustable='box')
     axis.set_xlabel('map x [m]')
     axis.set_ylabel('map y [m]')
-    axis.set_title('track02 closed-loop controller comparison')
+    axis.set_title('0809_test_6 closed-loop controller comparison')
     axis.legend(loc='best')
     figure.savefig(args.output, dpi=180)
     print(args.output)

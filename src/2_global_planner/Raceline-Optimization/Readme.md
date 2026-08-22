@@ -63,13 +63,13 @@ Alternatively, if you generated the map by storing a set of waypoints, you can d
 Then, run `main_globaltraj_f110.py` with the map name to generate the trajectory (expects the map to be inside `inputs/tracks`). By default, the generated raceline will be stored inside `outputs/<map_name>`.
 
 ```bash
-python3 main_globaltraj_f110.py --map_name e7_floor5_square
+python3 main_globaltraj_f110.py --map_name 0809_test_6_map
 ```
 
 Optionally, you can also specify a `--map_path` and `--export_path`:
 
 ```bash
-python3 main_globaltraj_f110.py --map_name e7_floor5_square --map_path ~/workspaces/racetracks/e7_floor5_square.csv --export_path /tmp/traj_race_cl.csv
+python3 main_globaltraj_f110.py --map_name 0809_test_6_map --map_path ~/workspaces/racetracks/0809_test_6_map.csv --export_path /tmp/traj_race_cl.csv
 ```
 
 The code is developed with Ubuntu 20.04 LTS and Python 3.8.

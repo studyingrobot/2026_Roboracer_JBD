@@ -1,11 +1,11 @@
 # F1TENTH 온보드 자율주행
 
-ROS 2 Humble 기반 실차용 저장소입니다. `track03`에서 AMCL 위치 추정,
+ROS 2 Humble 기반 실차용 저장소입니다. `0809_test_6`에서 AMCL 위치 추정,
 전역 raceline 추종, LiDAR 정적 장애물 회피와 제어기 비교를 수행합니다.
 
 - 시뮬레이션: [Kimz1xq/f1tenth](https://github.com/Kimz1xq/f1tenth)
 - 실차 출력: `/auto` → Ackermann mux → VESC
-- 지도: `maps/track03.yaml`
+- 지도: `maps/0809_test_6_map.yaml`
 - 기본 실차 제어기: `forza_map`
 - 제어기는 항상 비활성 상태로 시작하며 `/control/enable`로 켭니다.
 
@@ -18,7 +18,7 @@ f1tenth-onboard/
 │   ├── control/           Pure Pursuit, UNICORN L1, Forza MAP, MPC, MPCC
 │   └── f1tenth_bringup/   sim/real 공통 launch
 ├── vehicle_overrides/     온보드 bringup·VESC·joystick 보정본
-├── maps/track03.{pgm,yaml}
+├── maps/0809_test_6_map.{pgm,yaml}
 ├── config/amcl.yaml
 └── run_autonomy.sh        중복·고아 autonomy 세션 방지 실행기
 ```
@@ -120,7 +120,7 @@ Connected to a network device
 ```bash
 ros2 run nav2_map_server map_server --ros-args \
   -r __node:=map_server \
-  -p yaml_filename:=/home/misys/shared_dir/maps/track03.yaml \
+  -p yaml_filename:=/home/misys/shared_dir/maps/0809_test_6_map.yaml \
   -p topic:=map \
   -p frame_id:=map \
   -p use_sim_time:=false
@@ -192,7 +192,7 @@ cd /home/misys/shared_dir
 
 ./run_autonomy.sh \
   mode:=real \
-  track:=track03 \
+  track:=0809_test_6 \
   controller:=forza_map \
   speed:=1.0 \
   maximum_speed:=20.0 \
@@ -222,7 +222,7 @@ cd /home/misys/shared_dir
   controller:=kyeongho_pp \
   speed:=1.0 \
   maximum_speed:=20.0 \
-  waypoint_csv:=/home/misys/shared_dir/autonomy_ws/install/planning/share/planning/waypoints/track03_raceline.csv \
+  waypoint_csv:=/home/misys/shared_dir/autonomy_ws/install/planning/share/planning/waypoints/0809_test_6_raceline_3.csv \
   min_command_speed:=0.30
 ```
 

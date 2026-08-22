@@ -18,7 +18,7 @@ MPC는 장애물을 센서에서 찾는 알고리즘이 아닙니다. planning�
 
 ```bash
 ros2 launch f1tenth_bringup autonomy.launch.py \
-  track:=track03 controller:=mpc mpc_profile:=speed_0.55 \
+  track:=0809_test_6 controller:=mpc mpc_profile:=speed_0.55 \
   friction:=auto obstacles:=false
 ```
 
@@ -59,7 +59,7 @@ YAML 항목을 만들지 않고 `mpc_profile:=speed_0.85`처럼 실행 시 지�
 
 ```bash
 ros2 launch f1tenth_bringup autonomy.launch.py \
-  track:=track03 controller:=mpc mpc_profile:=speed_0.85 friction:=0.70
+  track:=0809_test_6 controller:=mpc mpc_profile:=speed_0.85 friction:=0.70
 ```
 
 ## 현재 검증 범위

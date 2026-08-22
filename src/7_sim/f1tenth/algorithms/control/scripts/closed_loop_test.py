@@ -87,7 +87,7 @@ def main():
     parser.add_argument('--laps', type=float, default=0.0,
                         help='Stop after this many laps; 0 disables lap stop')
     parser.add_argument('--max-error', type=float, default=0.75)
-    parser.add_argument('--output', default='/tmp/track02_closed_loop.csv')
+    parser.add_argument('--output', default='/tmp/0809_test_6_closed_loop.csv')
     args = parser.parse_args()
 
     rclpy.init()

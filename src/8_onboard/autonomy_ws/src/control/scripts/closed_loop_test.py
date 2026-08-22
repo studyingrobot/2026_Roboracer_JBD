@@ -151,7 +151,7 @@ def main():
     parser.add_argument(
         '--stall-timeout', type=float, default=5.0,
         help='Fail when the vehicle makes no meaningful progress for N seconds')
-    parser.add_argument('--output', default='/tmp/track02_closed_loop.csv')
+    parser.add_argument('--output', default='/tmp/0809_test_6_closed_loop.csv')
     parser.add_argument(
         '--already-enabled', action='store_true',
         help='Record an already-running controller, then stop it on exit')
