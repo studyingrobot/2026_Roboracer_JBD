@@ -66,10 +66,18 @@ local_obstacle_planner_node:
     # Small allowance for scan-surface centroid and real tracking error. This
     # affects path clearance, not the visualized obstacle size or AEB range.
     candidate_clearance_buffer: 0.05
-    avoidance_before_distance: 1.80
-    avoidance_after_distance: 1.10
-    maximum_avoidance_before_distance: 4.0
-    maximum_avoidance_after_distance: 4.0
+    # 이 값은 '벽 위험 상한'이다.  길게 잡으면 코너를 물고 벽에 걸리고,
+    # 짧게 잡으면 범프가 최대 오프셋에 도달하기 전에 장애물 클리어런스 원을
+    # 옆구리로 스친다.  0.5 m 로 내렸을 때 후자가 발생해 트랙 전 구간에서
+    # 모든 후보가 탈락했다 (장애물 반경 0.25 기준 필요 반경 0.44 > 0.5 전이).
+    # 장애물 쪽 하한은 이제 minimum_obstacle_transition_length 가 반경에서
+    # 직접 유도하므로, 여기서는 벽 상한만 정한다.
+    # 0809_test_6 맵 대조: 1.2/1.2 에서 r=0.25 는 96%, r=0.36 은 86% 통과이고
+    # 남은 탈락은 전부 트랙 폭 부족이라 감속 통과로 처리된다.
+    avoidance_before_distance: 1.2
+    avoidance_after_distance: 1.2
+    maximum_avoidance_before_distance: 1.2
+    maximum_avoidance_after_distance: 1.2
     avoidance_before_time: 0.75
     avoidance_after_time: 0.40
     path_sample_spacing: 0.04
@@ -93,6 +101,10 @@ local_obstacle_planner_node:
     # limit through a_y = v^2*kappa.
     maximum_planning_speed: 5.5
     minimum_avoidance_speed: 0.60
+    # 어떤 후보도 안전 여유를 만족하지 못할 때의 속도.  예전에는 이 상황에서
+    # 비상정지를 걸었는데, 트랙 폭이 설정 여유보다 좁을 뿐인 구간에서도
+    # 레이스가 끝나버렸다.  실제 접촉 방어는 AEB(critical_stop)가 맡는다.
+    infeasible_speed_limit: 0.60
     max_lateral_acceleration: 1.50
     candidate_curvature_weight: 0.35
     candidate_clearance_weight: 0.10

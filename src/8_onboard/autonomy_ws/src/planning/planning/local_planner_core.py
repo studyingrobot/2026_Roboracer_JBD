@@ -83,6 +83,68 @@ def minimum_quintic_transition_length(offset, maximum_curvature):
         * offset / maximum_curvature)
 
 
+def quintic_smoothstep(progress):
+    """Evaluate the 0-to-1 quintic smoothstep used by lateral transitions."""
+    progress = np.clip(np.asarray(progress, dtype=float), 0.0, 1.0)
+    return (
+        10.0 * progress ** 3
+        - 15.0 * progress ** 4
+        + 6.0 * progress ** 5)
+
+
+def minimum_obstacle_transition_length(
+        offset, clearance_radius, resolution=0.01):
+    """
+    Return the shortest quintic transition that stays outside an obstacle disc.
+
+    ``ClosedPathGeometry.offset_bump`` only reaches its full lateral offset at
+    the obstacle itself, so at arc distance ``d`` from it the path is aside by
+    ``offset * smoothstep(1 - d / length)`` while the disc demands
+    ``sqrt(clearance_radius**2 - d**2)``.  A transition comparable to or
+    shorter than the clearance radius therefore clips the disc sideways even
+    though the endpoint offset alone would clear it, and every candidate on
+    both sides is rejected at once.  Bisect for the smallest length whose
+    smoothstep dominates the disc across the whole overlap.
+
+    The requirement follows from the measured obstacle radius and the vehicle
+    geometry only, so it carries over to any track or obstacle size.
+    """
+    offset = abs(float(offset))
+    clearance_radius = max(0.0, float(clearance_radius))
+    if clearance_radius <= 0.0:
+        return 0.0
+    if offset <= clearance_radius:
+        # No transition length can clear the disc; the candidate is rejected
+        # by the collision check regardless of the window it is given.
+        return float('inf')
+
+    resolution = max(1e-3, float(resolution))
+    distances = np.arange(0.0, clearance_radius + resolution, resolution)
+    required = np.sqrt(np.maximum(
+        clearance_radius * clearance_radius - distances * distances, 0.0))
+
+    def clears(length):
+        lateral = offset * quintic_smoothstep(1.0 - distances / length)
+        return bool(np.all(lateral >= required))
+
+    low = 0.0
+    high = clearance_radius
+    for _ in range(32):
+        if clears(high):
+            break
+        low = high
+        high *= 2.0
+    else:
+        return float('inf')
+    for _ in range(40):
+        middle = 0.5 * (low + high)
+        if clears(middle):
+            high = middle
+        else:
+            low = middle
+    return float(high)
+
+
 def speed_dependent_horizon(
         speed, reaction_time, deceleration, margin,
         minimum, maximum):
@@ -196,14 +258,8 @@ class ClosedPathGeometry:
             (delta[before] + before_distance) / before_distance, 0.0, 1.0)
         after_progress = np.clip(
             delta[after] / after_distance, 0.0, 1.0)
-        weights[before] = (
-            10.0 * before_progress ** 3
-            - 15.0 * before_progress ** 4
-            + 6.0 * before_progress ** 5)
-        weights[after] = 1.0 - (
-            10.0 * after_progress ** 3
-            - 15.0 * after_progress ** 4
-            + 6.0 * after_progress ** 5)
+        weights[before] = quintic_smoothstep(before_progress)
+        weights[after] = 1.0 - quintic_smoothstep(after_progress)
         return self.points + self.normals * (offset * weights[:, None])
 
     def forward_distance(self, start_s, target_s):

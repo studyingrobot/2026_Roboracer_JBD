@@ -6,6 +6,7 @@ from planning.local_planner_core import (
     ClosedPathGeometry,
     adaptive_candidate_offsets,
     cluster_ordered_points,
+    minimum_obstacle_transition_length,
     minimum_quintic_transition_length,
     ordered_candidate_offsets,
     path_curvature_percentile,
@@ -35,6 +36,38 @@ def test_quintic_transition_length_grows_with_offset_and_speed_constraint():
     high_speed_limit = minimum_quintic_transition_length(0.20, 0.10)
     assert wide > short
     assert high_speed_limit > short
+
+
+def test_obstacle_transition_length_exceeds_the_clearance_radius():
+    """A bump shorter than the disc radius clips it before reaching offset."""
+    radius = 0.44
+    length = minimum_obstacle_transition_length(0.49, radius)
+    assert length > radius
+    # Larger offsets reach the required lateral distance sooner.
+    assert minimum_obstacle_transition_length(0.80, radius) < length
+    # Nothing to clear, nothing to require.
+    assert minimum_obstacle_transition_length(0.49, 0.0) == 0.0
+    # An offset inside the disc can never clear it at any length.
+    assert minimum_obstacle_transition_length(0.40, radius) == float('inf')
+
+
+def test_obstacle_transition_length_keeps_the_bump_outside_the_disc():
+    """The returned length must actually satisfy the disc constraint."""
+    radius = 0.44
+    offset = 0.49
+    length = minimum_obstacle_transition_length(offset, radius)
+    path = ClosedPathGeometry(sample_closed_path(
+        np.asarray([[-8.0, 0.0], [8.0, 0.0], [8.0, 8.0], [-8.0, 8.0]]),
+        spacing=0.02))
+    center_s, _, _ = path.project([0.0, 0.0])
+    shifted = path.offset_bump(center_s, offset, length, length)
+    distances = np.linalg.norm(shifted - np.asarray([0.0, 0.0]), axis=1)
+    inside = distances < radius - 1e-3
+    assert not np.any(inside)
+    # A visibly shorter bump does clip it, which is the failure being fixed.
+    clipped = path.offset_bump(center_s, offset, 0.5, 0.5)
+    assert np.any(
+        np.linalg.norm(clipped - np.asarray([0.0, 0.0]), axis=1) < radius)
 
 
 def test_locked_avoidance_side_is_preferred_but_not_exclusive():
