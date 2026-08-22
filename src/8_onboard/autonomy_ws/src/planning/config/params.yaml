@@ -90,6 +90,9 @@ local_obstacle_planner_node:
     # RViz marker size and tune only from measured braking data.
     aeb_corridor_half_width: 0.19
     aeb_reaction_time: 0.12
+    # 런치의 max_longitudinal_deceleration 이 덮어쓴다.  여기 값은 노드를
+    # 단독 실행할 때의 기본값일 뿐이다.  속도 프로파일과 AEB 가 서로 다른
+    # 제동력을 믿으면 AEB 가 정지거리를 짧게 잡아 늦게 선다.
     aeb_max_deceleration: 4.0
     aeb_min_distance: 0.16
     aeb_critical_reaction_time: 0.05

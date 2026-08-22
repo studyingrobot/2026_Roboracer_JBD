@@ -25,6 +25,11 @@ def _launch_setup(context):
             'max_lateral_acceleration').perform(context)),
         'planning_deceleration': float(LaunchConfiguration(
             'planning_deceleration').perform(context)),
+        # 같은 차의 같은 제동력이다.  AEB 만 yaml 의 고정값에 묶여 있으면
+        # 정지거리를 v^2/(2a) 로 낙관적으로 계산해 실제보다 늦게 선다.
+        # 현장에서 잰 감속도 하나가 경로 계획과 AEB 양쪽에 들어가야 한다.
+        'aeb_max_deceleration': float(LaunchConfiguration(
+            'planning_deceleration').perform(context)),
     }
     waypoint_overrides = {
         'waypoint_csv': LaunchConfiguration('waypoint_csv').perform(context),
